@@ -436,6 +436,12 @@ class DiceCompleteScraper:
         self.max_pages = max_pages
         self.all_candidates = []
         self.console_messages = []
+        self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.debug_folder = f"debug_{self.timestamp}"
+
+        # Create debug folder if in debug mode
+        if self.debug_mode:
+            os.makedirs(self.debug_folder, exist_ok=True)
 
     def log(self, message, level="INFO"):
         """Log message with timestamp"""
@@ -446,12 +452,19 @@ class DiceCompleteScraper:
         """Take screenshot if debug mode is enabled"""
         if self.debug_mode:
             try:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"dice_{name}_{timestamp}.png"
+                # Save in debug folder with descriptive name
+                filename = os.path.join(self.debug_folder, f"{name}.png")
                 page.screenshot(path=filename, full_page=True)
                 self.log(f"📸 Screenshot saved: {filename}")
+
+                # Also save HTML for debugging
+                html_filename = os.path.join(self.debug_folder, f"{name}.html")
+                html_content = page.content()
+                with open(html_filename, 'w', encoding='utf-8') as f:
+                    f.write(html_content)
+                self.log(f"📄 HTML saved: {html_filename}")
             except Exception as e:
-                self.log(f"⚠️ Could not save screenshot: {e}")
+                self.log(f"⚠️ Could not save screenshot/HTML: {e}")
 
     def setup_browser(self):
         """Setup browser with anti-detection settings"""
@@ -507,235 +520,554 @@ class DiceCompleteScraper:
         self.take_screenshot(self.page, "browser_setup")
 
     def apply_search_filters(self):
-        """Apply search filters using JavaScript"""
+        """Apply search filters using JavaScript (comprehensive version from dice-filters.py)"""
         self.log("🎯 Applying search filters...")
 
+        filter_js = f'''
+(async () => {{
+  const BOOLEAN = `{BOOLEAN}`;
+  const LOCATION = `{LOCATION}`;
+  const DISTANCE_MILES = {DISTANCE_MILES};
+  const LAST_ACTIVE_DAYS = {LAST_ACTIVE_DAYS};
+
+  // Track filter state
+  const filterState = {{
+    keywordApplied: false,
+    locationApplied: false,
+    distanceApplied: false,
+    relocateApplied: false,
+    lastActiveApplied: false,
+    profileSourceApplied: false,
+    contactMethodsCleared: false,
+    additionalFiltersCleared: false,
+    searchExecuted: false
+  }};
+
+  // Helper functions
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const setVal = (el, v) => {{
+    el.value = v;
+    el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+    el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+  }};
+  const clickIf = (el) => {{ if (el && !el.disabled) el.click(); }};
+
+  // Helper to open accordion panels
+  const ensureOpen = async (toggleSel, panelSel) => {{
+    const toggle = document.querySelector(toggleSel);
+    const panel = document.querySelector(panelSel);
+    if (toggle && panel) {{
+      console.log('🔓 Checking panel:', panelSel);
+      if (panel.getAttribute('aria-hidden') === 'true') {{
+        clickIf(toggle);
+        await sleep(150);
+        console.log('✅ Panel opened');
+      }}
+    }}
+  }};
+
+  try {{
+    console.log('🚀 Starting comprehensive filter application...');
+
+    // Step 0: Clear IntelliSearch
+    console.log('🔧 Step 0: Clearing IntelliSearch...');
+    const intelli = document.querySelector('#dhi-typeahead-text-area-search-barjob-titlesInput');
+    if (intelli) {{
+      setVal(intelli, '');
+      console.log('✅ IntelliSearch cleared');
+    }}
+
+    // Step 1: Set Boolean search
+    console.log('🔧 Step 1: Setting keyword search...');
+    let kb = document.querySelector('#dhi-typeahead-text-area-keyword') ||
+             document.querySelector('input[placeholder*="Keyword or Boolean"]') ||
+             document.querySelector('textarea[placeholder*="Keyword or Boolean"]');
+
+    if (!kb) {{
+      const alternativeSelectors = [
+        'input[placeholder*="keyword" i]',
+        'textarea[placeholder*="keyword" i]',
+        'input[aria-label*="keyword" i]',
+        'textarea[aria-label*="keyword" i]'
+      ];
+      for (const selector of alternativeSelectors) {{
+        kb = document.querySelector(selector);
+        if (kb) break;
+      }}
+    }}
+
+    if (kb) {{
+      setVal(kb, '');
+      await sleep(100);
+      setVal(kb, BOOLEAN);
+      await sleep(200);
+      filterState.keywordApplied = kb.value.includes('Appian') && kb.value.includes('SAIL');
+      console.log('✅ Boolean search applied, verified:', filterState.keywordApplied);
+    }} else {{
+      console.error('❌ Keyword field not found');
+    }}
+
+    // Step 2: Set Location
+    console.log('\\n🔧 Step 2: Setting location...');
+    const loc = document.querySelector('#google-location-search');
+    if (loc) {{
+      setVal(loc, '');
+      await sleep(100);
+      setVal(loc, LOCATION);
+      await sleep(300);
+
+      const list = document.getElementById('talent-search-location-search-typeahead-list');
+      if (list) {{
+        const options = Array.from(list.querySelectorAll('[role="option"], li, a, div'));
+        const opt = options.find(x => (x.textContent || '').toLowerCase().includes(LOCATION.toLowerCase()));
+        if (opt) {{
+          clickIf(opt);
+          await sleep(200);
+          console.log('✅ Location selected from autocomplete');
+        }}
+      }}
+      filterState.locationApplied = loc.value.includes(LOCATION);
+      console.log('✅ Location set, verified:', filterState.locationApplied);
+    }}
+
+    // Step 3: Set Distance
+    console.log('\\n🔧 Step 3: Setting distance...');
+    const distanceInputs = Array.from(document.querySelectorAll('input[type="number"], input[type="text"]'));
+    const distanceInput = distanceInputs.find(i => {{
+      const ctx = (i.closest('.float-label-container')?.previousElementSibling?.textContent || '') +
+                  (i.getAttribute('title') || '') +
+                  (i.getAttribute('aria-label') || '') +
+                  (i.placeholder || '');
+      return /distance|miles/i.test(ctx);
+    }});
+
+    if (distanceInput) {{
+      setVal(distanceInput, String(DISTANCE_MILES));
+      await sleep(100);
+      filterState.distanceApplied = distanceInput.value == String(DISTANCE_MILES);
+      console.log('✅ Distance set to', DISTANCE_MILES, 'miles, verified:', filterState.distanceApplied);
+    }}
+
+    // Step 4: Willing to Relocate
+    console.log('\\n🔧 Step 4: Setting willing to relocate...');
+    const relocateBtn = document.querySelector('#searchBarWillingToRelocatePopoverToggle');
+    if (relocateBtn) {{
+      const wasExpanded = relocateBtn.getAttribute('aria-expanded') === 'true';
+      if (!wasExpanded) {{
+        clickIf(relocateBtn);
+        await sleep(300);
+      }}
+
+      const relocateAnywhere = document.querySelector('#willingtorelocate-facet-option-willing-to-relocate');
+      if (relocateAnywhere && !relocateAnywhere.checked) {{
+        clickIf(relocateAnywhere);
+        await sleep(150);
+        console.log('✅ Willing to relocate checked');
+      }}
+
+      // Include locals checkbox
+      const includeLocals = document.querySelector('.popover-content input[data-cy="exclude-locals-checkbox"]') ||
+                           document.querySelector('.popover-content #excludeLocals') ||
+                           document.querySelector('.popover-content input[aria-label*="Include Candidates Living"]');
+      if (includeLocals && !includeLocals.disabled && !includeLocals.checked) {{
+        clickIf(includeLocals);
+        await sleep(150);
+        console.log('✅ Include locals checked');
+      }}
+
+      if (!wasExpanded) {{
+        clickIf(relocateBtn);
+        await sleep(150);
+      }}
+      filterState.relocateApplied = relocateAnywhere ? relocateAnywhere.checked : false;
+      console.log('✅ Willing to relocate configured, verified:', filterState.relocateApplied);
+    }}
+
+    // Step 5: Last Active Days
+    console.log('\\n🔧 Step 5: Setting last active days...');
+    await ensureOpen('#filter-accordion-date-updated-toggle', '#filter-accordion-date-updated-panel');
+    const lastActiveInput = document.querySelector('#filterLastActiveOnBrand');
+    if (lastActiveInput) {{
+      setVal(lastActiveInput, String(LAST_ACTIVE_DAYS));
+      filterState.lastActiveApplied = lastActiveInput.value == String(LAST_ACTIVE_DAYS);
+      console.log('✅ Last active days set to', LAST_ACTIVE_DAYS, 'verified:', filterState.lastActiveApplied);
+    }}
+
+    // Step 6: Profile Source - Any
+    console.log('\\n🔧 Step 6: Setting profile source...');
+    const profileAny = document.querySelector('#profilesources-facet-option-0');
+    if (profileAny && !profileAny.checked) {{
+      profileAny.click();
+      await sleep(100);
+      console.log('✅ Profile source set to Any');
+    }}
+    filterState.profileSourceApplied = profileAny ? profileAny.checked : false;
+
+    // Step 7: Uncheck Contact Methods
+    console.log('\\n🔧 Step 7: Unchecking contact methods...');
+    await ensureOpen('#filter-accordion-contact-methods-toggle', '#filter-accordion-contact-methods-panel');
+    const contactPanel = document.querySelector('#filter-accordion-contact-methods-panel');
+    if (contactPanel) {{
+      const boxes = contactPanel.querySelectorAll('input[type="checkbox"]');
+      boxes.forEach((cb, i) => {{
+        if (cb.checked || cb.getAttribute('aria-checked') === 'true') {{
+          cb.click();
+          console.log('✅ Unchecked contact method', i+1);
+        }}
+      }});
+      filterState.contactMethodsCleared = true;
+    }}
+
+    // Step 8: Uncheck Additional Filters
+    console.log('\\n🔧 Step 8: Unchecking additional filters...');
+    await ensureOpen('#filter-accordion-additional-filters-toggle', '#filter-accordion-additional-filters-panel');
+    const addlPanel = document.querySelector('#filter-accordion-additional-filters-panel');
+    if (addlPanel) {{
+      const boxes = addlPanel.querySelectorAll('input[type="checkbox"]');
+      boxes.forEach((cb, i) => {{
+        if (cb.checked || cb.getAttribute('aria-checked') === 'true') {{
+          cb.click();
+          console.log('✅ Unchecked additional filter', i+1);
+        }}
+      }});
+      filterState.additionalFiltersCleared = true;
+    }}
+
+    // Step 9: Execute Search
+    console.log('\\n🔧 Step 9: Executing search...');
+    const searchBtn = document.getElementById('searchButton') || document.querySelector('#searchButton');
+    if (searchBtn) {{
+      const isVisible = searchBtn.offsetParent !== null;
+      const isEnabled = !searchBtn.disabled;
+      if (isVisible && isEnabled) {{
+        filterState.searchExecuted = true;
+        searchBtn.click();
+        console.log('✅ Search executed successfully');
+      }} else {{
+        console.log('❌ Search button not clickable');
+      }}
+    }} else {{
+      console.log('❌ Search button not found');
+    }}
+
+    // Final verification
+    console.log('\\n📊 === FILTER VERIFICATION ===');
+    console.log('Filter state:', filterState);
+    const successCount = Object.values(filterState).filter(Boolean).length;
+    const totalFilters = Object.keys(filterState).length;
+    console.log('✅', successCount, '/', totalFilters, 'filters applied successfully');
+
+    return filterState;
+
+  }} catch (error) {{
+    console.error('❌ Error in filter application:', error);
+    throw error;
+  }}
+}})();
+'''
+
         try:
-            # Apply filters step by step with proper JavaScript escaping
-            self.log("🔍 Step 1: Clearing IntelliSearch...")
-            self.page.evaluate('''
-                const intelli = document.querySelector('#dhi-typeahead-text-area-search-barjob-titlesInput');
-                if (intelli) {
-                    intelli.value = '';
-                    intelli.dispatchEvent(new Event('input', { bubbles: true }));
-                    intelli.dispatchEvent(new Event('change', { bubbles: true }));
-                    console.log('✅ IntelliSearch cleared');
-                }
-            ''')
-
-            self.log("🔍 Step 2: Setting Boolean search...")
-            self.page.evaluate(f'''
-                const keywordField = document.querySelector('#dhi-typeahead-text-area-keyword') ||
-                                  document.querySelector('input[placeholder*="Keyword or Boolean"], input[placeholder*="keyword" i], textarea[placeholder*="keyword" i]');
-                if (keywordField) {{
-                    keywordField.value = `{BOOLEAN}`;
-                    keywordField.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                    keywordField.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                    console.log('✅ Boolean search applied');
-                }} else {{
-                    throw new Error('Keyword field not found');
-                }}
-            ''')
-
-            time.sleep(1)
-
-            self.log("📍 Step 3: Setting location...")
-            self.page.evaluate(f'''
-                const locationField = document.querySelector('#google-location-search');
-                if (locationField) {{
-                    locationField.value = '{LOCATION}';
-                    locationField.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                    locationField.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                    console.log('✅ Location set');
-                }}
-            ''')
-
-            time.sleep(1)
-
-            # Handle location autocomplete
-            self.log("⏳ Waiting for location autocomplete...")
-            self.page.evaluate('''
-                const list = document.getElementById('talent-search-location-search-typeahead-list');
-                if (list) {
-                    const options = Array.from(list.querySelectorAll('[role="option"], li, a, div'));
-                    const opt = options.find(x => x.textContent && x.textContent.toLowerCase().includes('mclean'));
-                    if (opt) {
-                        opt.click();
-                        console.log('✅ Location selected from autocomplete');
-                    }
-                }
-            ''')
-
-            time.sleep(1)
-
-            self.log("📏 Step 4: Setting distance...")
-            self.page.evaluate('''
-                const distanceInputs = Array.from(document.querySelectorAll('input[type="number"], input[type="text"]'));
-                const distanceInput = distanceInputs.find(i => {
-                    const ctx = (i.closest('.float-label-container')?.previousElementSibling?.textContent || '') +
-                               (i.getAttribute('title') || '') +
-                               (i.getAttribute('aria-label') || '');
-                    return /distance|miles/i.test(ctx);
-                });
-
-                if (distanceInput) {
-                    distanceInput.value = '50';
-                    distanceInput.dispatchEvent(new Event('input', { bubbles: true }));
-                    distanceInput.dispatchEvent(new Event('change', { bubbles: true }));
-                    console.log('✅ Distance set to 50 miles');
-                }
-            ''')
-
-            self.log("📅 Step 5: Setting last active days...")
-            self.page.evaluate('''
-                const lastActiveInput = document.querySelector('#filterLastActiveOnBrand');
-                if (lastActiveInput) {
-                    lastActiveInput.value = '20';
-                    lastActiveInput.dispatchEvent(new Event('input', { bubbles: true }));
-                    lastActiveInput.dispatchEvent(new Event('change', { bubbles: true }));
-                    console.log('✅ Last active days set to 20');
-                }
-            ''')
-
-            self.log("🔄 Step 6: Setting willing to relocate...")
-            self.page.evaluate('''
-                const relocateBtn = document.querySelector('#searchBarWillingToRelocatePopoverToggle');
-                if (relocateBtn) {
-                    relocateBtn.click();
-                    setTimeout(() => {
-                        const relocateAnywhere = document.querySelector('#willingtorelocate-facet-option-willing-to-relocate');
-                        if (relocateAnywhere && !relocateAnywhere.checked) {
-                            relocateAnywhere.click();
-                            console.log('✅ Willing to relocate checked');
-                        }
-                        relocateBtn.click(); // Close popover
-                    }, 300);
-                    console.log('✅ Willing to relocate set');
-                }
-            ''')
-
-            time.sleep(1)
-
-            self.log("🔍 Step 7: Executing search...")
-            self.page.evaluate('''
-                const searchBtn = document.getElementById('searchButton') ||
-                                 document.querySelector('button[type="submit"], button');
-                if (searchBtn && !searchBtn.disabled) {
-                    searchBtn.click();
-                    console.log('✅ Search executed');
-                } else {
-                    throw new Error('Search button not found or disabled');
-                }
-            ''')
-            search_result = True
-
+            result = self.page.evaluate(filter_js)
+            self.log(f"✅ Filters applied successfully")
+            self.log(f"📊 Filter verification: {result}")
             self.take_screenshot(self.page, "filters_applied")
-            return search_result
+            return True
 
         except Exception as e:
             self.log(f"❌ Error applying filters: {e}")
+            self.take_screenshot(self.page, "filter_error")
             return False
 
     def extract_candidate_data(self):
-        """Extract candidate data from current page"""
+        """Extract candidate data from current page (comprehensive version from dice_web_scrap.py)"""
         self.log("📊 Extracting candidate data...")
 
-        extract_js = """
+        extract_js = r"""
         () => {
+            console.log('🎲 === Dice Scraper Data Extraction ===');
+            console.log('🌐 Current URL:', window.location.href);
+            console.log('📄 Page Title:', document.title);
+
             const candidates = [];
 
-            // Strategy 1: Find candidate cards with multiple selectors
+            // Debug function to analyze page structure
+            const debugPageStructure = () => {
+                console.log('🔍 === Page Structure Debug ===');
+
+                // Check for various candidate card selectors
+                const selectors = [
+                    '[data-cy="profile-name-text"]',
+                    '.profile-name-text',
+                    '[class*="profile"]',
+                    '[class*="candidate"]',
+                    '[class*="result"]',
+                    'card',
+                    '[data-cy*="profile"]',
+                    '[data-cy*="candidate"]'
+                ];
+
+                selectors.forEach(selector => {
+                    const elements = document.querySelectorAll(selector);
+                    if (elements.length > 0) {
+                        console.log(`✅ Found ${elements.length} elements with selector: ${selector}`);
+                    }
+                });
+
+                // Look for any links to profiles
+                const profileLinks = document.querySelectorAll('a[href*="/employer/talent/profile/"]');
+                console.log(`🔗 Found ${profileLinks.length} profile links`);
+
+                return {
+                    profileLinks: profileLinks.length
+                };
+            };
+
+            // Debug page structure first
+            const pageDebug = debugPageStructure();
+
+            // Find all candidate cards/profiles with multiple selector strategies
             let candidateCards = [];
 
-            const selectors = [
-                '[data-cy="profile-name-text"]',
-                '.profile-name-text',
-                '[class*="profile"]',
-                '[class*="candidate"]',
-                '[class*="result"]'
-            ];
+            // Strategy 1: Original selector
+            candidateCards = Array.from(document.querySelectorAll('[data-cy="profile-name-text"], .profile-name-text'));
+            console.log(`🎯 Strategy 1 - Found ${candidateCards.length} candidate name elements`);
 
-            for (const selector of selectors) {
-                const elements = document.querySelectorAll(selector);
-                if (elements.length > 0) {
-                    candidateCards = Array.from(elements);
-                    console.log(`✅ Found ${candidateCards.length} candidates with selector: ${selector}`);
-                    break;
-                }
-            }
-
-            // Strategy 2: Find via profile links
-            const profileLinks = document.querySelectorAll('a[href*="/employer/talent/profile/"]');
+            // Strategy 2: Find cards containing profile links
             if (candidateCards.length === 0) {
-                candidateCards = Array.from(profileLinks);
+                const profileLinks = document.querySelectorAll('a[href*="/employer/talent/profile/"]');
+                candidateCards = Array.from(profileLinks).map(link => {
+                    const card = link.closest('div, card, article, section');
+                    return card ? card.querySelector('h1, h2, h3, h4, [class*="name"], [data-cy*="name"]') : link;
+                }).filter(el => el);
+                console.log(`🎯 Strategy 2 - Found ${candidateCards.length} candidate elements via profile links`);
             }
 
-            console.log(`Processing ${profileLinks.length} profile links...`);
+            // Strategy 3: Find any elements with profile-related classes
+            if (candidateCards.length === 0) {
+                candidateCards = Array.from(document.querySelectorAll('[class*="profile"], [class*="candidate"], [class*="result"]'))
+                    .map(card => card.querySelector('h1, h2, h3, h4, [class*="name"], [data-cy*="name"]'))
+                    .filter(el => el);
+                console.log(`🎯 Strategy 3 - Found ${candidateCards.length} candidate elements via profile classes`);
+            }
 
-            profileLinks.forEach((link, index) => {
+            console.log(`🎯 Final candidate elements found: ${candidateCards.length}`);
+
+            candidateCards.forEach((nameElement, index) => {
                 try {
-                    const candidate = {};
+                    console.log(`👤 Processing candidate ${index + 1}...`);
 
-                    // Get name - simplest approach
-                    let nameText = link.textContent.trim();
-                    if (!nameText) {
-                        // Try child elements
-                        const childText = link.innerText || link.querySelector('span, div')?.textContent || '';
-                        nameText = childText.trim();
+                    // Get the candidate card container - search up the DOM tree more aggressively
+                    // The nameElement is the h3 with profile-name-text
+                    // We need to go up to find the full card that contains all the data
+                    let card = null;
+
+                    // Strategy 1: Go up parent chain until we find an element with the data we need
+                    let parent = nameElement.parentElement;
+                    for (let i = 0; i < 10 && parent; i++) {
+                        // Look for an element that has both the name and other data fields
+                        if (parent.querySelector('[data-cy="location"]') &&
+                            parent.querySelector('[data-cy="pref-prev-job-title"]')) {
+                            card = parent;
+                            console.log(`✅ Found card via parent search at level ${i}`);
+                            break;
+                        }
+                        parent = parent.parentElement;
                     }
 
-                    candidate['name'] = nameText;
-                    candidate['profile_url'] = link.href.startsWith('http') ? link.href : `https://www.dice.com${link.href}`;
+                    // Strategy 2: If not found, try to find by common card class patterns
+                    if (!card) {
+                        card = nameElement.closest('card, .card, [class*="candidate-card"]');
+                    }
 
-                    if (!candidate['name']) return; // Skip if no name
+                    // Strategy 3: Use document-wide search for the card containing this name
+                    if (!card) {
+                        console.log(`⚠️ Using fallback: searching whole document`);
+                        // Get all cards and find the one containing this name text
+                        const allCards = document.querySelectorAll('[class*="card"], article, section');
+                        for (const potentialCard of allCards) {
+                            if (potentialCard.textContent.includes(nameElement.textContent.trim())) {
+                                if (potentialCard.querySelector('[data-cy="location"]')) {
+                                    card = potentialCard;
+                                    console.log(`✅ Found card via document-wide search`);
+                                    break;
+                                }
+                            }
+                        }
+                    }
 
-                    // Extract other fields
+                    // Last resort: use the name element's parent
+                    if (!card) {
+                        console.log(`⚠️ Could not find card container for candidate ${index + 1}, using parent`);
+                        card = nameElement.parentElement?.parentElement || nameElement;
+                    }
+
+                    console.log(`📦 Card container: tag=${card.tagName}, id=${card.id || 'none'}, classes=${card.className.substring(0, 80)}`);
+
+                    const candidate = {};
+
+                    // Helper function to find element with multiple selectors
                     const findElement = (selectors) => {
                         for (const selector of selectors) {
                             const element = card.querySelector(selector);
-                            if (element && element.textContent.trim()) return element;
+                            if (element && element.textContent.trim()) {
+                                return element;
+                            }
                         }
                         return null;
                     };
 
-                    candidate['title'] = findElement(['[class*="title"], [class*="position"], [class*="role"]'])?.textContent?.trim() || '';
-                    candidate['location'] = findElement(['[class*="location"], .location-name'])?.textContent?.trim() || '';
-                    candidate['experience'] = findElement(['[class*="experience"], .total-work-exp'])?.textContent?.trim() || '';
-                    candidate['work_permit'] = findElement(['[class*="permit"], .work-permits'])?.textContent?.trim() || '';
-                    candidate['relocate'] = findElement(['[class*="relocate"], .willing-to-relocate'])?.textContent?.trim() || '';
-                    candidate['compensation'] = findElement(['[class*="salary"], .salary-info'])?.textContent?.trim() || '';
-                    candidate['remote'] = findElement(['[class*="remote"], [class*="hybrid"]'])?.textContent?.trim() || '';
-                    candidate['updated'] = findElement(['[class*="updated"], .last-updated'])?.textContent?.trim() || '';
-                    candidate['last_active'] = findElement(['[class*="active"], .last-active-on-brand'])?.textContent?.trim() || '';
-                    candidate['likely_switch'] = findElement(['[class*="switch"], [class*="likely"]'])?.textContent?.trim() || '';
+                    // 0. Profile Name - try to get from the nameElement first
+                    let candidateName = nameElement.textContent.trim();
 
-                    // Get profile URL
+                    // If nameElement doesn't have text, search within card
+                    if (!candidateName || candidateName.length < 2) {
+                        const nameElement_final = card.querySelector('[data-cy="profile-name-text"], .profile-name-text, h1, h2, h3, h4');
+                        candidateName = nameElement_final ? nameElement_final.textContent.trim() : '';
+                    }
+
+                    candidate['profile-name-text'] = candidateName;
+
+                    if (candidate['profile-name-text']) {
+                        console.log(`✅ Candidate ${index + 1} name: ${candidate['profile-name-text']}`);
+                    } else {
+                        console.log(`⚠️ Candidate ${index + 1}: No name found, skipping`);
+                        console.log(`   NameElement text: "${nameElement.textContent.substring(0, 50)}"`);
+                        console.log(`   NameElement tag: ${nameElement.tagName}`);
+                        return; // Skip if no name found
+                    }
+
+                    // 0.1. Profile URL
                     const linkElement = card.querySelector('a[href*="/employer/talent/profile/"]');
                     if (linkElement) {
                         const href = linkElement.getAttribute('href');
-                        candidate['profile_url'] = href.startsWith('http') ? href : `https://www.dice.com${href}`;
+                        candidate['profile-url'] = href.startsWith('http') ? href : `https://www.dice.com${href}`;
+                        console.log(`🔗 Profile URL: ${candidate['profile-url']}`);
                     } else {
-                        candidate['profile_url'] = '';
+                        candidate['profile-url'] = '';
                     }
 
-                    // Add metadata
-                    candidate['scraped_date'] = new Date().toISOString();
-                    candidate['page_number'] = typeof window.currentPageNumber !== 'undefined' ? window.currentPageNumber : 1;
+                    // 1. Preferred Job Title
+                    const jobTitleElement = findElement([
+                        '[data-cy="pref-prev-job-title"]',
+                        '.preferred-position',
+                        '[class*="preferred"]',
+                        '[class*="position"]',
+                        '[class*="title"]'
+                    ]);
+                    candidate['pref-prev-job-title'] = jobTitleElement ? jobTitleElement.textContent.trim() : '';
 
-                    const filledFields = Object.entries(candidate).filter(([key, value]) => value && value.trim()).length;
-                    if (filledFields > 0) { // At least name (less restrictive for testing)
+                    // 2. Location
+                    const locationElement = findElement([
+                        '[data-cy="location"]',
+                        '.location-name',
+                        '[class*="location"]',
+                        '[data-cy*="location"]'
+                    ]);
+                    candidate['location'] = locationElement ? locationElement.textContent.trim() : '';
+
+                    // 3. Work Experience
+                    const workExpElement = findElement([
+                        '[data-cy="work-exp"]',
+                        '.total-work-exp',
+                        '[class*="experience"]',
+                        '[class*="work"]'
+                    ]);
+                    candidate['work-exp'] = workExpElement ? workExpElement.textContent.trim() : '';
+
+                    // 4. Work Permit
+                    const workPermitElement = findElement([
+                        '[data-cy="work-permit"]',
+                        '.work-permits',
+                        '[class*="permit"]',
+                        '[class*="auth"]'
+                    ]);
+                    candidate['work-permit'] = workPermitElement ? workPermitElement.textContent.trim() : '';
+
+                    // 5. Willing to Relocate
+                    const relocateElement = findElement([
+                        '[data-cy="willing-to-relocate"]',
+                        '.willing-to-relocate',
+                        '[class*="relocate"]'
+                    ]);
+                    candidate['willing-to-relocate'] = relocateElement ? relocateElement.textContent.trim() : '';
+
+                    // 6. Compensation
+                    const compensationElement = findElement([
+                        '[data-cy="compensation"]',
+                        '.salary-info',
+                        '[class*="salary"]',
+                        '[class*="comp"]'
+                    ]);
+                    candidate['compensation'] = compensationElement ? compensationElement.textContent.trim() : '';
+
+                    // 7. Desired Work Setting
+                    const workSettingElement = findElement([
+                        '[data-cy="desired-work-setting"]',
+                        '.desired-work-setting',
+                        '[class*="remote"]',
+                        '[class*="hybrid"]'
+                    ]);
+                    candidate['desired-work-setting'] = workSettingElement ? workSettingElement.textContent.trim() : '';
+
+                    // 8. Date Updated
+                    const dateUpdatedElement = findElement([
+                        '[data-cy="date-updated"]',
+                        '.last-updated',
+                        '[class*="updated"]'
+                    ]);
+                    candidate['date-updated'] = dateUpdatedElement ? dateUpdatedElement.textContent.trim() : '';
+
+                    // 9. Date Last Active
+                    const dateLastActiveElement = findElement([
+                        '[data-cy="date-last-active"]',
+                        '.last-active-on-brand',
+                        '[class*="active"]'
+                    ]);
+                    candidate['date-last-active'] = dateLastActiveElement ? dateLastActiveElement.textContent.trim() : '';
+
+                    // 10. Likely to Switch
+                    const likelyToSwitchElement = findElement([
+                        '[data-cy="likely-to-switch-text"]',
+                        '.likely-to-switch-text',
+                        '[class*="switch"]',
+                        '[class*="likely"]'
+                    ]);
+                    candidate['likely-to-switch'] = likelyToSwitchElement ? likelyToSwitchElement.textContent.trim() : '';
+
+                    // Add metadata
+                    candidate['scraped-date'] = new Date().toISOString();
+                    candidate['page-number'] = typeof window.currentPageNumber !== 'undefined' ? window.currentPageNumber : 1;
+
+                    // Log what we found for this candidate
+                    const filledFields = Object.entries(candidate).filter(([key, value]) => {
+                        if (!value) return false;
+                        if (typeof value === 'string') return value.trim().length > 0;
+                        return true; // Non-string values (like numbers) count as filled
+                    }).length;
+                    console.log(`📊 Candidate ${index + 1}: ${filledFields}/13 fields filled`);
+
+                    if (filledFields >= 2) { // At least name + one other field
                         candidates.push(candidate);
-                        console.log(`✅ Added candidate: ${candidate['name']} (filled fields: ${filledFields})`);
+                        console.log(`✅ Added candidate: ${candidate['profile-name-text']}`);
                     } else {
-                        console.log(`⚠️ Skipping candidate - no data extracted`);
+                        console.log(`⚠️ Candidate ${index + 1} skipped: insufficient data (only ${filledFields} fields)`);
                     }
 
                 } catch (error) {
-                    console.error(`Error processing candidate ${index + 1}:`, error);
+                    console.error(`❌ Error processing candidate ${index + 1}:`, error);
                 }
             });
 
-            console.log(`✅ Successfully extracted ${candidates.length} candidates`);
+            console.log(`✅ Successfully extracted ${candidates.length} candidates with complete data`);
+
+            // Log summary of found data
+            if (candidates.length > 0) {
+                console.log('📋 === Extraction Summary ===');
+                candidates.forEach((candidate, i) => {
+                    console.log(`Candidate ${i+1}: ${candidate['profile-name-text']} | ${candidate['location']} | ${candidate['pref-prev-job-title']}`);
+                });
+            }
+
             return candidates;
         }
         """
@@ -743,6 +1075,13 @@ class DiceCompleteScraper:
         try:
             candidates = self.page.evaluate(extract_js)
             self.log(f"✅ Extracted {len(candidates)} candidates from current page")
+
+            # Show sample of extracted data
+            if candidates and len(candidates) > 0:
+                self.log(f"📋 Sample candidates:")
+                for i, candidate in enumerate(candidates[:3], 1):
+                    self.log(f"   {i}. {candidate.get('profile-name-text', 'N/A')} - {candidate.get('location', 'N/A')} - {candidate.get('pref-prev-job-title', 'N/A')}")
+
             return candidates
         except Exception as e:
             self.log(f"❌ Error extracting data: {e}")
@@ -812,7 +1151,10 @@ class DiceCompleteScraper:
 
                 # Show sample
                 for i, candidate in enumerate(candidates[:3], 1):
-                    self.log(f"   {i}. {candidate['name']} - {candidate['location']} - {candidate['title']}")
+                    name = candidate.get('profile-name-text', 'N/A')
+                    location = candidate.get('location', 'N/A')
+                    title = candidate.get('pref-prev-job-title', 'N/A')
+                    self.log(f"   {i}. {name} - {location} - {title}")
             else:
                 self.log("❌ No candidates found on this page")
 
@@ -846,39 +1188,56 @@ class DiceCompleteScraper:
             self.log("❌ No candidates to save")
             return
 
-        # Define columns and order
+        # Define columns and order (matching the extraction field names)
         columns = [
-            'name', 'title', 'location', 'experience', 'work_permit', 'relocate',
-            'compensation', 'remote', 'updated', 'last_active', 'likely_switch',
-            'profile_url', 'scraped_date', 'page_number'
+            'profile-name-text',
+            'profile-url',
+            'pref-prev-job-title',
+            'location',
+            'work-exp',
+            'work-permit',
+            'willing-to-relocate',
+            'compensation',
+            'desired-work-setting',
+            'date-updated',
+            'date-last-active',
+            'likely-to-switch',
+            'scraped-date',
+            'page-number'
         ]
 
         # Create DataFrame
         df = pd.DataFrame(self.all_candidates)
 
-        # Reorder columns
+        # Reorder columns according to defined order
         df = df.reindex(columns=columns, fill_value='')
 
-        # Generate filename with timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"dice_candidates_{timestamp}.xlsx"
+        # Use the same timestamp as the debug folder
+        filename = f"dice_candidates_{self.timestamp}.xlsx"
 
         try:
             df.to_excel(filename, index=False, engine='openpyxl')
             self.log(f"✅ Data saved to {filename}")
             self.log(f"📊 Total records: {len(df)}")
+            self.log(f"📝 Columns: {', '.join(df.columns)}")
 
             # Show sample data
             self.log("\n📋 Sample data:")
             for i, row in df.head(3).iterrows():
-                self.log(f"   {i+1}. {row['name']} - {row['location']} - {row['title']}")
+                name = row.get('profile-name-text', 'N/A')
+                location = row.get('location', 'N/A')
+                title = row.get('pref-prev-job-title', 'N/A')
+                self.log(f"   {i+1}. {name} - {location} - {title}")
 
         except Exception as e:
             self.log(f"❌ Error saving to Excel: {e}")
             # Fallback to CSV
             csv_filename = filename.replace('.xlsx', '.csv')
-            df.to_csv(csv_filename, index=False)
-            self.log(f"✅ Data saved to CSV instead: {csv_filename}")
+            try:
+                df.to_csv(csv_filename, index=False)
+                self.log(f"✅ Data saved to CSV instead: {csv_filename}")
+            except Exception as csv_error:
+                self.log(f"❌ Error saving to CSV: {csv_error}")
 
     def run_complete_process(self):
         """Run the complete process from login to data extraction"""
@@ -931,7 +1290,8 @@ class DiceCompleteScraper:
                 error_count = len([msg for msg in self.console_messages if '[error]' in msg.lower()])
                 warning_count = len([msg for msg in self.console_messages if '[warning]' in msg.lower()])
                 self.log(f"   Errors: {error_count}, Warnings: {warning_count}")
-                self.log(f"   📸 Screenshots saved in current directory")
+                self.log(f"   📁 Debug files saved in: {self.debug_folder}/")
+                self.log(f"   💡 You can delete this folder later: rm -rf {self.debug_folder}")
 
             return True
 
