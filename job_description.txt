@@ -1,0 +1,28 @@
+Senior Python Developer - Cloud Infrastructure
+
+We are seeking a talented Senior Python Developer with expertise in cloud infrastructure and DevOps practices to join our growing engineering team.
+
+Required Skills:
+- 5+ years of Python development experience
+- Strong experience with AWS services (EC2, S3, Lambda, RDS)
+- Docker and Kubernetes containerization
+- RESTful API development and microservices architecture
+- Experience with relational and NoSQL databases
+- CI/CD pipeline implementation and management
+- Strong understanding of software engineering best practices
+
+Preferred Qualifications:
+- Experience with cloud-native application development
+- Knowledge of infrastructure as code (Terraform, CloudFormation)
+- Familiarity with monitoring and logging tools
+- Agile/Scrum development methodology
+- Bachelor's degree in Computer Science or related field
+
+Responsibilities:
+- Design and develop scalable Python applications
+- Implement and maintain cloud infrastructure solutions
+- Collaborate with cross-functional teams
+- Write clean, maintainable, and well-tested code
+- Participate in code reviews and architectural decisions
+
+We offer competitive salary, remote work options, and excellent benefits package.
