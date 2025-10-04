@@ -695,28 +695,38 @@ class DiceCompleteScraper:
         await sleep(300);
       }}
 
+      // UNCHECK "Willing to Relocate Anywhere"
       const relocateAnywhere = document.querySelector('#willingtorelocate-facet-option-willing-to-relocate');
-      if (relocateAnywhere && !relocateAnywhere.checked) {{
+      if (relocateAnywhere && relocateAnywhere.checked) {{
         clickIf(relocateAnywhere);
         await sleep(150);
-        console.log('✅ Willing to relocate checked');
+        console.log('✅ Willing to relocate anywhere unchecked');
       }}
 
-      // Include locals checkbox
+      // CHECK "Willing To Relocate To Included Location(s)"
+      const relocateToIncluded = document.querySelector('#willingtorelocate-facet-option-exclude-no-work-area-preference') ||
+                                 document.querySelector('[data-cy="exclude-candidates-without-preference-checkbox"]');
+      if (relocateToIncluded && !relocateToIncluded.checked) {{
+        clickIf(relocateToIncluded);
+        await sleep(150);
+        console.log('✅ Willing to relocate to included location(s) checked');
+      }}
+
+      // CHECK "Include Candidates Living in Location(s) Searched" toggle
       const includeLocals = document.querySelector('.popover-content input[data-cy="exclude-locals-checkbox"]') ||
                            document.querySelector('.popover-content #excludeLocals') ||
                            document.querySelector('.popover-content input[aria-label*="Include Candidates Living"]');
       if (includeLocals && !includeLocals.disabled && !includeLocals.checked) {{
         clickIf(includeLocals);
         await sleep(150);
-        console.log('✅ Include locals checked');
+        console.log('✅ Include candidates living in location(s) searched checked');
       }}
 
       if (!wasExpanded) {{
         clickIf(relocateBtn);
         await sleep(150);
       }}
-      filterState.relocateApplied = relocateAnywhere ? relocateAnywhere.checked : false;
+      filterState.relocateApplied = relocateToIncluded ? relocateToIncluded.checked : false;
       console.log('✅ Willing to relocate configured, verified:', filterState.relocateApplied);
     }}
 
@@ -1375,8 +1385,61 @@ def main():
     parser = argparse.ArgumentParser(description='Complete Dice Talent Search and Scraping')
     parser.add_argument('--debug', action='store_true', help='Run in visible browser mode for debugging')
     parser.add_argument('--pages', type=int, default=1, help='Number of pages to scrape (default: 1, max: 10)')
+    parser.add_argument('--generate-query', action='store_true', help='Generate Boolean query from job_description.txt before scraping')
+    parser.add_argument('--force-generate', action='store_true', help='Force regenerate query even if Dice_string.txt exists')
 
     args = parser.parse_args()
+
+    # Generate query if requested
+    if args.generate_query or args.force_generate:
+        print("\n🤖 Generating Boolean query from job_description.txt...")
+        print("=" * 50)
+
+        if not os.path.exists("job_description.txt"):
+            print("❌ Error: job_description.txt not found!")
+            print("💡 Create a job_description.txt file with your job requirements")
+            return
+
+        try:
+            from dice_api import generate_dice_query_with_chatgpt
+
+            # Check if we should regenerate
+            if os.path.exists("Dice_string.txt") and not args.force_generate:
+                print("⚠️  Dice_string.txt already exists")
+                print("💡 Use --force-generate to overwrite")
+                response = input("Generate new query? (y/N): ")
+                if response.lower() != 'y':
+                    print("📋 Using existing Dice_string.txt")
+                    # Reload the query
+                    global BOOLEAN
+                    BOOLEAN = load_boolean_query()
+                else:
+                    query = generate_dice_query_with_chatgpt("job_description.txt", "Dice_string.txt")
+                    if query:
+                        print("✅ Query generated successfully!")
+                        BOOLEAN = query
+                    else:
+                        print("❌ Failed to generate query")
+                        return
+            else:
+                query = generate_dice_query_with_chatgpt("job_description.txt", "Dice_string.txt")
+                if query:
+                    print("✅ Query generated successfully!")
+                    BOOLEAN = query
+                else:
+                    print("❌ Failed to generate query")
+                    return
+
+            print("=" * 50)
+            print()
+        except ImportError:
+            print("❌ Error: dice_api.py not found!")
+            print("💡 Make sure dice_api.py is in the same directory")
+            return
+        except Exception as e:
+            print(f"❌ Error generating query: {e}")
+            print("💡 Check your OpenAI API key in .env file")
+            return
 
     # Check if help was requested (argparse handles -h automatically)
     if len(sys.argv) == 1:
