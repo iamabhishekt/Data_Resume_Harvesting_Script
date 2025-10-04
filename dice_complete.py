@@ -15,7 +15,44 @@ import pandas as pd
 from playwright.sync_api import sync_playwright
 
 # ===== Configuration =====
-BOOLEAN = '(Appian OR "Appian Developer" OR "Appian Engineer" OR "Appian Architect" OR "Appian BPM" OR "Appian Designer" OR "Appian Consultant") AND (SAIL OR "Appian UI" OR "Appian RPA" OR "Appian Integration" OR "Appian Automation") AND ("Business Process Management" OR BPM) AND (Java OR J2EE OR "JavaScript" OR C#) AND ("low-code" OR "low code" OR "low-code development") AND (workflow OR "process modeling" OR "workflow automation") AND (integration OR API OR "third-party systems") AND (SQL OR "data modeling" OR "data management") AND (AWS OR "Amazon Web Services" OR "Cloud Integration")'
+def load_boolean_query():
+    """Load Boolean query from Dice_string.txt or use default"""
+    dice_string_file = "Dice_string.txt"
+
+    # Try to read from Dice_string.txt
+    if os.path.exists(dice_string_file):
+        try:
+            with open(dice_string_file, 'r', encoding='utf-8') as f:
+                query = f.read().strip()
+                if query:
+                    print(f"✅ Loaded Boolean query from {dice_string_file}")
+                    return query
+        except Exception as e:
+            print(f"⚠️ Error reading {dice_string_file}: {e}")
+
+    # If file doesn't exist or is empty, try to generate it
+    print(f"⚠️ {dice_string_file} not found or empty")
+
+    if os.path.exists("job_description.txt"):
+        print("📝 Found job_description.txt, attempting to generate Boolean query...")
+        try:
+            # Import and run dice_api to generate the query
+            from dice_api import generate_dice_query_with_chatgpt
+            query = generate_dice_query_with_chatgpt("job_description.txt", dice_string_file)
+            if query:
+                print(f"✅ Generated Boolean query using ChatGPT")
+                return query
+        except ImportError:
+            print("⚠️ dice_api.py not found, cannot auto-generate query")
+        except Exception as e:
+            print(f"⚠️ Error generating query: {e}")
+
+    # Fallback to default query
+    print("📋 Using default Boolean query (Appian Developer)")
+    return '(Appian OR "Appian Developer" OR "Appian Engineer" OR "Appian Architect" OR "Appian BPM" OR "Appian Designer" OR "Appian Consultant") AND (SAIL OR "Appian UI" OR "Appian RPA" OR "Appian Integration" OR "Appian Automation") AND ("Business Process Management" OR BPM) AND (Java OR J2EE OR "JavaScript" OR C#) AND ("low-code" OR "low code" OR "low-code development") AND (workflow OR "process modeling" OR "workflow automation") AND (integration OR API OR "third-party systems") AND (SQL OR "data modeling" OR "data management") AND (AWS OR "Amazon Web Services" OR "Cloud Integration")'
+
+# Load the Boolean query at startup
+BOOLEAN = load_boolean_query()
 LOCATION = 'McLean, VA, USA'
 DISTANCE_MILES = 50
 LAST_ACTIVE_DAYS = 30

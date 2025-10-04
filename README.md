@@ -98,13 +98,40 @@ The cleanup script will:
 
 ## Configuration
 
-Edit the following constants in `dice_complete.py`:
+### Boolean Query (Search Keywords)
 
+**NEW**: The Boolean query is now loaded from `Dice_string.txt` instead of hardcoded!
+
+**Option 1: Auto-generate with ChatGPT** (Recommended)
+```bash
+# 1. Edit job_description.txt with your job requirements
+# 2. Set up .env with OPENAI_API_KEY=sk-your-key
+# 3. Generate query
+python dice_api.py
+
+# The query is saved to Dice_string.txt and automatically used
+```
+
+**Option 2: Manual editing**
+```bash
+# Edit the query directly
+nano Dice_string.txt
+```
+
+**Option 3: Use default** (Appian Developer)
+```bash
+# If Dice_string.txt doesn't exist, default query is used
+```
+
+📖 See [QUERY_GENERATION_GUIDE.md](QUERY_GENERATION_GUIDE.md) for detailed instructions.
+
+### Other Settings
+
+Edit in `dice_complete.py`:
 ```python
-BOOLEAN = '(Appian OR "Appian Developer" ...) AND ...'
 LOCATION = 'McLean, VA, USA'
 DISTANCE_MILES = 50
-LAST_ACTIVE_DAYS = 20
+LAST_ACTIVE_DAYS = 30
 ```
 
 ## Requirements
