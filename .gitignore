@@ -1,1 +1,5 @@
 /debug_*/
+.env
+/.claude/
+/.idea/
+*.xlsx

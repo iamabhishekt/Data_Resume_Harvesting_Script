@@ -1,28 +1,24 @@
-Senior Python Developer - Cloud Infrastructure
+An Appian Architect designs, builds, and maintains business process automation solutions using the Appian low-code platform. Responsibilities include gathering and analyzing requirements, developing process models and SAIL interfaces, integrating with other systems, performing testing and maintenance, and providing user support. Key skills required are proficiency with the Appian platform, low-code development, process automation, integration techniques, database management, and a customer-oriented approach.
 
-We are seeking a talented Senior Python Developer with expertise in cloud infrastructure and DevOps practices to join our growing engineering team.
+Responsibilities
+• Design and Development: Create custom applications and solutions on the Appian platform to automate business processes.
+• Requirements Analysis: Collaborate with stakeholders and business analysts to understand and translate business needs into technical solutions.
+• Process Modeling: Design and build workflows and process models within the Appian platform.
+• Integration: Develop integrations with other third-party systems and platforms.
+• User Interface (UI) Development: Create user-friendly and responsive interfaces using SAIL and other Appian tools.
+• Data Management: Implement data models and ensure data integrity within the applications.
+• Testing and Debugging: Conduct testing to ensure the functionality, performance, and security of developed solutions.
+• Maintenance and Optimization: Troubleshoot issues, perform performance tuning, and maintain existing Appian applications.
+• Documentation: Create technical documentation, user guides, and training materials for developed solutions.
+• Mentorship: Provide technical guidance and support to junior developers.
 
-Required Skills:
-- 5+ years of Python development experience
-- Strong experience with AWS services (EC2, S3, Lambda, RDS)
-- Docker and Kubernetes containerization
-- RESTful API development and microservices architecture
-- Experience with relational and NoSQL databases
-- CI/CD pipeline implementation and management
-- Strong understanding of software engineering best practices
-
-Preferred Qualifications:
-- Experience with cloud-native application development
-- Knowledge of infrastructure as code (Terraform, CloudFormation)
-- Familiarity with monitoring and logging tools
-- Agile/Scrum development methodology
-- Bachelor's degree in Computer Science or related field
-
-Responsibilities:
-- Design and develop scalable Python applications
-- Implement and maintain cloud infrastructure solutions
-- Collaborate with cross-functional teams
-- Write clean, maintainable, and well-tested code
-- Participate in code reviews and architectural decisions
-
-We offer competitive salary, remote work options, and excellent benefits package.
+Key Skills & Qualifications
+• Appian Platform: Strong proficiency in the Appian low-code platform and its tools specifically Appian UI and RPA development and integration patterns.
+• Low-Code Development: Experience with low-code development principles and practices.
+• Business Process Management (BPM): Understanding of BPM concepts and tools.
+• Software Development: Background in software engineering, including experience with technologies like JavaScript, Java/J2EE, or C#.
+• Problem-Solving: Ability to analyze complex problems and develop efficient technical solutions.
+• Communication: Strong verbal and written communication skills to interact with stakeholders and create documentation.
+• Continuous Learning: A commitment to staying updated on new Appian platform features and industry trends.
+• Customer Focus: A mindset focused on understanding and meeting end-user needs to deliver user-friendly applications
+Cloud Mandatory AWS and AWS services
