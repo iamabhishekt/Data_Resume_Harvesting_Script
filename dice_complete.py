@@ -18,7 +18,7 @@ from playwright.sync_api import sync_playwright
 BOOLEAN = '(Appian OR "Appian Developer" OR "Appian Engineer" OR "Appian Architect" OR "Appian BPM" OR "Appian Designer" OR "Appian Consultant") AND (SAIL OR "Appian UI" OR "Appian RPA" OR "Appian Integration" OR "Appian Automation") AND ("Business Process Management" OR BPM) AND (Java OR J2EE OR "JavaScript" OR C#) AND ("low-code" OR "low code" OR "low-code development") AND (workflow OR "process modeling" OR "workflow automation") AND (integration OR API OR "third-party systems") AND (SQL OR "data modeling" OR "data management") AND (AWS OR "Amazon Web Services" OR "Cloud Integration")'
 LOCATION = 'McLean, VA, USA'
 DISTANCE_MILES = 50
-LAST_ACTIVE_DAYS = 20
+LAST_ACTIVE_DAYS = 30
 
 # Login cookies (from dice_login.py)
 cookies_json = [
@@ -936,14 +936,35 @@ class DiceCompleteScraper:
                         return; // Skip if no name found
                     }
 
-                    // 0.1. Profile URL
-                    const linkElement = card.querySelector('a[href*="/employer/talent/profile/"]');
+                    // 0.1. Profile URL and Viewed Status
+                    // Find the profile link - it's usually the parent of the nameElement or nearby
+                    let linkElement = null;
+
+                    // Strategy 1: Check if nameElement is inside a link
+                    linkElement = nameElement.closest('a[href*="/employer/talent/profile/"]');
+
+                    // Strategy 2: Look for link in the card
+                    if (!linkElement) {
+                        linkElement = card.querySelector('a[href*="/employer/talent/profile/"]');
+                    }
+
                     if (linkElement) {
                         const href = linkElement.getAttribute('href');
                         candidate['profile-url'] = href.startsWith('http') ? href : `https://www.dice.com${href}`;
+
+                        // Check if profile has been viewed (has 'viewed' class)
+                        const hasViewedClass = linkElement.classList.contains('viewed');
+                        candidate['profile-viewed'] = hasViewedClass ? 'Yes' : 'No';
+
+                        // Debug: Show all classes on the link
+                        const allClasses = Array.from(linkElement.classList).join(', ');
                         console.log(`🔗 Profile URL: ${candidate['profile-url']}`);
+                        console.log(`👁️ Link classes: ${allClasses}`);
+                        console.log(`👁️ Profile Viewed: ${candidate['profile-viewed']}`);
                     } else {
                         candidate['profile-url'] = '';
+                        candidate['profile-viewed'] = 'Unknown';
+                        console.log(`⚠️ No profile link found`);
                     }
 
                     // 1. Preferred Job Title
@@ -1044,7 +1065,7 @@ class DiceCompleteScraper:
                         if (typeof value === 'string') return value.trim().length > 0;
                         return true; // Non-string values (like numbers) count as filled
                     }).length;
-                    console.log(`📊 Candidate ${index + 1}: ${filledFields}/13 fields filled`);
+                    console.log(`📊 Candidate ${index + 1}: ${filledFields}/15 fields filled`);
 
                     if (filledFields >= 2) { // At least name + one other field
                         candidates.push(candidate);
@@ -1192,6 +1213,7 @@ class DiceCompleteScraper:
         columns = [
             'profile-name-text',
             'profile-url',
+            'profile-viewed',
             'pref-prev-job-title',
             'location',
             'work-exp',

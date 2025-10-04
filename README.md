@@ -5,7 +5,8 @@ Complete solution for scraping candidate data from Dice.com talent search with f
 ## Features
 
 ✅ **Comprehensive Filtering** - Applies 9 different search filters
-✅ **Data Extraction** - Extracts 14 fields per candidate
+✅ **Data Extraction** - Extracts 15 fields per candidate
+✅ **Profile Tracking** - Detects if profiles have been viewed
 ✅ **Excel Export** - Clean, organized output with timestamps
 ✅ **Debug Mode** - Screenshots and HTML saved in organized folders
 ✅ **Multi-page Support** - Scrape up to 10 pages
@@ -46,6 +47,7 @@ python dice_complete.py --debug --pages 3
 |-------|-------------|
 | profile-name-text | Candidate's full name |
 | profile-url | Link to candidate profile |
+| **profile-viewed** | **Whether profile has been viewed (Yes/No)** |
 | pref-prev-job-title | Preferred/Previous job title |
 | location | Candidate location |
 | work-exp | Work experience |
