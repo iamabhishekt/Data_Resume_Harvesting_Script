@@ -4,7 +4,8 @@
       "Bash(python:*)",
       "Bash(python3:*)",
       "Bash(chmod:*)",
-      "Bash(./cleanup_debug.sh:*)"
+      "Bash(./cleanup_debug.sh:*)",
+      "Bash(pip3 freeze:*)"
     ],
     "deny": [],
     "ask": []

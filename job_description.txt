@@ -1,3 +1,15 @@
+Role           :-        Senior Appian Developer
+
+Location   :-        Onsite (Reston, VA & Plano, TX)
+
+Salary        
+
+ 
+
+Job Description:
+
+ 
+
 An Appian Architect designs, builds, and maintains business process automation solutions using the Appian low-code platform. Responsibilities include gathering and analyzing requirements, developing process models and SAIL interfaces, integrating with other systems, performing testing and maintenance, and providing user support. Key skills required are proficiency with the Appian platform, low-code development, process automation, integration techniques, database management, and a customer-oriented approach.
 
 Responsibilities
@@ -21,4 +33,4 @@ Key Skills & Qualifications
 • Communication: Strong verbal and written communication skills to interact with stakeholders and create documentation.
 • Continuous Learning: A commitment to staying updated on new Appian platform features and industry trends.
 • Customer Focus: A mindset focused on understanding and meeting end-user needs to deliver user-friendly applications
-Cloud Mandatory AWS and AWS services
+

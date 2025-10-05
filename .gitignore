@@ -1,7 +1,45 @@
-/debug_*/
+# Environment and credentials
 .env
-/.claude/
-/.idea/
-*.xlsx
-*.csv
-Dice_String.txt
+*.env
+!.env.example
+
+# Virtual environment
+venv/
+env/
+ENV/
+.venv
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Output files
+dice_candidates_*.xlsx
+dice_candidates_*.csv
+
+# Debug folders
+debug_*/
+screenshots/
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Backup files
+*_OLD.*
+*.bak
+
+# Playwright
+.playwright/
+playwright-report/
+test-results/

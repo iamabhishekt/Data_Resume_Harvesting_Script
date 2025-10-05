@@ -15,9 +15,47 @@ import pandas as pd
 from playwright.sync_api import sync_playwright
 
 # ===== Configuration =====
+def should_regenerate_query():
+    """
+    Check if Dice_string.txt should be regenerated based on file timestamps
+    Returns True if job_description.txt is newer than Dice_string.txt
+    """
+    job_desc_file = "job_description.txt"
+    dice_string_file = "Dice_string.txt"
+
+    # If either file doesn't exist, return appropriate value
+    if not os.path.exists(job_desc_file):
+        return False
+
+    if not os.path.exists(dice_string_file):
+        return True
+
+    # Compare modification times
+    job_desc_mtime = os.path.getmtime(job_desc_file)
+    dice_string_mtime = os.path.getmtime(dice_string_file)
+
+    # If job_description.txt is newer, we should regenerate
+    return job_desc_mtime > dice_string_mtime
+
 def load_boolean_query():
     """Load Boolean query from Dice_string.txt or use default"""
     dice_string_file = "Dice_string.txt"
+    job_desc_file = "job_description.txt"
+
+    # Check if we should regenerate the query
+    if should_regenerate_query():
+        print(f"🔄 job_description.txt has been updated")
+        print(f"📝 Regenerating Boolean query from {job_desc_file}...")
+        try:
+            from dice_api import generate_dice_query_with_chatgpt
+            query = generate_dice_query_with_chatgpt(job_desc_file, dice_string_file)
+            if query:
+                print(f"✅ Generated new Boolean query")
+                return query
+        except ImportError:
+            print("⚠️ dice_api.py not found, cannot auto-generate query")
+        except Exception as e:
+            print(f"⚠️ Error generating query: {e}")
 
     # Try to read from Dice_string.txt
     if os.path.exists(dice_string_file):
@@ -33,12 +71,12 @@ def load_boolean_query():
     # If file doesn't exist or is empty, try to generate it
     print(f"⚠️ {dice_string_file} not found or empty")
 
-    if os.path.exists("job_description.txt"):
-        print("📝 Found job_description.txt, attempting to generate Boolean query...")
+    if os.path.exists(job_desc_file):
+        print(f"📝 Found {job_desc_file}, attempting to generate Boolean query...")
         try:
             # Import and run dice_api to generate the query
             from dice_api import generate_dice_query_with_chatgpt
-            query = generate_dice_query_with_chatgpt("job_description.txt", dice_string_file)
+            query = generate_dice_query_with_chatgpt(job_desc_file, dice_string_file)
             if query:
                 print(f"✅ Generated Boolean query using ChatGPT")
                 return query
@@ -1304,7 +1342,18 @@ class DiceCompleteScraper:
         """Save candidate data to Excel file - append to existing or create new"""
         if not self.all_candidates:
             self.log("❌ No candidates to save")
-            return
+            return None
+
+        # Get search parameters for metadata
+        search_params = {
+            'Boolean Query': BOOLEAN[:100] + '...' if len(BOOLEAN) > 100 else BOOLEAN,
+            'Location': LOCATION,
+            'Distance (miles)': DISTANCE_MILES,
+            'Last Active (days)': LAST_ACTIVE_DAYS,
+            'Timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'Pages Scraped': self.max_pages,
+            'Total Candidates Found': len(self.all_candidates)
+        }
 
         # Define all columns (for internal processing)
         all_columns = [
@@ -1380,73 +1429,145 @@ class DiceCompleteScraper:
                 latest_file = existing_files[0]
                 self.log(f"📂 Found existing file: {latest_file}")
 
-                # Read existing data
-                existing_df = pd.read_excel(latest_file, engine='openpyxl')
+                # Read existing data from Candidates sheet
+                existing_df = pd.read_excel(latest_file, sheet_name='Candidates', engine='openpyxl')
                 self.log(f"📊 Existing records: {len(existing_df)}")
 
-                # Ensure existing_df has candidate_profile_id column
-                if 'candidate_profile_id' not in existing_df.columns:
-                    self.log("🔧 Adding candidate_profile_id to existing data...")
-                    existing_df['candidate_profile_id'] = existing_df['profile-url'].apply(extract_profile_id)
+                # Check if profile-url column exists in existing data
+                if 'profile-url' not in existing_df.columns:
+                    self.log("⚠️  Existing file doesn't have 'profile-url' column")
+                    self.log("📝 Creating new file instead of appending...")
+                    df = new_df
+                    self.log(f"✅ {len(df)} new candidates to save")
+
+                    # Delete the old file before creating new one
+                    try:
+                        os.remove(latest_file)
+                        self.log(f"🗑️  Deleted old file: {latest_file}")
+                    except Exception as e:
+                        self.log(f"⚠️  Could not delete old file: {e}")
                 else:
-                    # Re-extract profile IDs to ensure they don't have ?searchId
-                    self.log("🔧 Cleaning candidate_profile_id in existing data...")
-                    existing_df['candidate_profile_id'] = existing_df['profile-url'].apply(extract_profile_id)
+                    # Ensure existing_df has candidate_profile_id column
+                    if 'candidate_profile_id' not in existing_df.columns:
+                        self.log("🔧 Adding candidate_profile_id to existing data...")
+                        existing_df['candidate_profile_id'] = existing_df['profile-url'].apply(extract_profile_id)
+                    else:
+                        # Re-extract profile IDs to ensure they don't have ?searchId
+                        self.log("🔧 Cleaning candidate_profile_id in existing data...")
+                        existing_df['candidate_profile_id'] = existing_df['profile-url'].apply(extract_profile_id)
 
-                # Get existing profile IDs for duplicate checking
-                existing_profile_ids = set(existing_df['candidate_profile_id'].dropna())
-                existing_profile_ids.discard('')  # Remove empty strings
+                    # Get existing profile IDs for duplicate checking
+                    existing_profile_ids = set(existing_df['candidate_profile_id'].dropna())
+                    existing_profile_ids.discard('')  # Remove empty strings
 
-                self.log(f"🔍 Checking for duplicates against {len(existing_profile_ids)} existing profiles...")
+                    self.log(f"🔍 Checking for duplicates against {len(existing_profile_ids)} existing profiles...")
 
-                # Filter out duplicates from new data
-                # Check only profile ID (since it's the unique identifier)
-                new_df_filtered = new_df[
-                    ~(new_df['candidate_profile_id'].isin(existing_profile_ids))
-                ].copy()
+                    # Filter out duplicates from new data
+                    # Check only profile ID (since it's the unique identifier)
+                    new_df_filtered = new_df[
+                        ~(new_df['candidate_profile_id'].isin(existing_profile_ids))
+                    ].copy()
 
-                duplicates_found = len(new_df) - len(new_df_filtered)
-                if duplicates_found > 0:
-                    self.log(f"⚠️  Skipped {duplicates_found} duplicate candidate(s) found in existing data")
-                    self.log(f"✅ {len(new_df_filtered)} new unique candidate(s) to add")
-                else:
-                    self.log(f"✅ All {len(new_df_filtered)} candidates are new (no duplicates)")
+                    duplicates_found = len(new_df) - len(new_df_filtered)
+                    if duplicates_found > 0:
+                        self.log(f"⚠️  Skipped {duplicates_found} duplicate candidate(s) found in existing data")
+                        self.log(f"✅ {len(new_df_filtered)} new unique candidate(s) to add")
+                    else:
+                        self.log(f"✅ All {len(new_df_filtered)} candidates are new (no duplicates)")
 
-                if len(new_df_filtered) == 0:
-                    self.log("ℹ️  No new candidates to add - all were duplicates")
-                    # Still create new file with updated timestamp
-                    df = existing_df
-                else:
-                    # Append only non-duplicate new data
-                    combined_df = pd.concat([existing_df, new_df_filtered], ignore_index=True)
-                    self.log(f"➕ Added {len(new_df_filtered)} new records")
-                    df = combined_df
+                    if len(new_df_filtered) == 0:
+                        self.log("ℹ️  No new candidates to add - all were duplicates")
+                        # Still create new file with updated timestamp
+                        df = existing_df
+                    else:
+                        # Append only non-duplicate new data
+                        combined_df = pd.concat([existing_df, new_df_filtered], ignore_index=True)
+                        self.log(f"➕ Added {len(new_df_filtered)} new records")
+                        df = combined_df
 
-                # Delete the old file before creating new one
-                try:
-                    os.remove(latest_file)
-                    self.log(f"🗑️  Deleted old file: {latest_file}")
-                except Exception as e:
-                    self.log(f"⚠️  Could not delete old file: {e}")
+                    # Delete the old file before creating new one
+                    try:
+                        os.remove(latest_file)
+                        self.log(f"🗑️  Deleted old file: {latest_file}")
+                    except Exception as e:
+                        self.log(f"⚠️  Could not delete old file: {e}")
 
             else:
                 self.log(f"📝 No existing files found - creating new file")
                 df = new_df
                 self.log(f"✅ {len(df)} new candidates to save")
 
-            # Save to timestamped file (only export columns, hide profile-url)
+            # Sort by date-updated (most recent first)
+            if 'date-updated' in df.columns:
+                try:
+                    def parse_relative_time(time_str):
+                        """Convert relative time strings to days for sorting"""
+                        if not time_str or pd.isna(time_str):
+                            return 999999  # Put empty values at the end
+
+                        time_str = str(time_str).lower().strip()
+
+                        # Extract number and unit
+                        import re
+                        match = re.search(r'(\d+)\s*(day|week|month|year)', time_str)
+                        if not match:
+                            return 999999  # Unknown format goes to end
+
+                        number = int(match.group(1))
+                        unit = match.group(2)
+
+                        # Convert to days
+                        if unit == 'day':
+                            return number
+                        elif unit == 'week':
+                            return number * 7
+                        elif unit == 'month':
+                            return number * 30
+                        elif unit == 'year':
+                            return number * 365
+
+                        return 999999
+
+                    # Create temporary sort column
+                    df['_temp_sort_days'] = df['date-updated'].apply(parse_relative_time)
+                    df = df.sort_values(by='_temp_sort_days', ascending=True, na_position='last')
+                    df = df.drop(columns=['_temp_sort_days'])
+                    self.log(f"🔄 Sorted candidates by date-updated (most recent first)")
+                except Exception as e:
+                    self.log(f"⚠️  Could not sort by date-updated: {e}")
+
+            # Save to timestamped file with multiple sheets
             timestamped_filename = f"dice_candidates_{self.timestamp}.xlsx"
-            df[export_columns].to_excel(timestamped_filename, index=False, engine='openpyxl')
-            self.log(f"✅ Data saved to {timestamped_filename}")
-            self.log(f"📊 Total records in file: {len(df)}")
-            self.log(f"🔒 Hidden column: profile-url (kept for duplicate checking)")
+
+            # Create Excel writer object
+            with pd.ExcelWriter(timestamped_filename, engine='openpyxl') as writer:
+                # Sheet 1: Candidates Data (First sheet) - Include profile-url for duplicate checking
+                df[all_columns].to_excel(writer, sheet_name='Candidates', index=False)
+
+                # Sheet 2: Search Parameters (Second sheet)
+                params_df = pd.DataFrame(list(search_params.items()), columns=['Parameter', 'Value'])
+                params_df.to_excel(writer, sheet_name='Search Parameters', index=False)
+
+                # Hide the profile-url column (column C - index 2)
+                workbook = writer.book
+                worksheet = writer.sheets['Candidates']
+                # Find profile-url column index
+                profile_url_col_idx = all_columns.index('profile-url') + 1  # Excel is 1-indexed
+                worksheet.column_dimensions[chr(64 + profile_url_col_idx)].hidden = True
+
+                self.log(f"✅ Data saved to {timestamped_filename}")
+                self.log(f"📊 Total records in file: {len(df)}")
+                self.log(f"📋 Sheets: 'Candidates', 'Search Parameters'")
+                self.log(f"🔒 profile-url column hidden (kept for duplicate checking)")
+
+            # Return the filename for opening later
+            saved_filename = timestamped_filename
 
             # Show sample data
-            if existing_files:
+            if existing_files and 'existing_profile_ids' in locals():
                 self.log("\n📋 Sample of newly added unique candidates:")
                 sample_df = new_df[
-                    ~(new_df['candidate_profile_id'].isin(existing_profile_ids)) &
-                    ~(new_df['profile-url'].isin(existing_urls))
+                    ~(new_df['candidate_profile_id'].isin(existing_profile_ids))
                 ]
                 for i, (idx, row) in enumerate(sample_df.head(3).iterrows(), 1):
                     name = row.get('profile-name-text', 'N/A')
@@ -1462,6 +1583,8 @@ class DiceCompleteScraper:
                     title = row.get('pref-prev-job-title', 'N/A')
                     profile_id = row.get('candidate_profile_id', 'N/A')
                     self.log(f"   {i}. {name} ({profile_id}) - {location} - {title}")
+
+            return saved_filename
 
         except Exception as e:
             self.log(f"❌ Error saving to Excel: {e}")
@@ -1486,52 +1609,118 @@ class DiceCompleteScraper:
                     existing_csv_df = pd.read_csv(latest_csv)
                     self.log(f"📊 Existing CSV records: {len(existing_csv_df)}")
 
-                    # Ensure candidate_profile_id exists
-                    if 'candidate_profile_id' not in existing_csv_df.columns:
-                        existing_csv_df['candidate_profile_id'] = existing_csv_df['profile-url'].apply(extract_profile_id)
+                    # Check if profile-url column exists in existing CSV
+                    if 'profile-url' not in existing_csv_df.columns:
+                        self.log("⚠️  Existing CSV doesn't have 'profile-url' column")
+                        self.log("📝 Creating new CSV instead of appending...")
+                        csv_df = new_df
+
+                        # Delete old CSV
+                        try:
+                            os.remove(latest_csv)
+                            self.log(f"🗑️  Deleted old CSV: {latest_csv}")
+                        except Exception as del_err:
+                            self.log(f"⚠️  Could not delete old CSV: {del_err}")
                     else:
-                        existing_csv_df['candidate_profile_id'] = existing_csv_df['profile-url'].apply(extract_profile_id)
+                        # Ensure candidate_profile_id exists
+                        if 'candidate_profile_id' not in existing_csv_df.columns:
+                            existing_csv_df['candidate_profile_id'] = existing_csv_df['profile-url'].apply(extract_profile_id)
+                        else:
+                            existing_csv_df['candidate_profile_id'] = existing_csv_df['profile-url'].apply(extract_profile_id)
 
-                    # Get existing profile IDs
-                    existing_csv_ids = set(existing_csv_df['candidate_profile_id'].dropna())
-                    existing_csv_ids.discard('')
+                        # Get existing profile IDs
+                        existing_csv_ids = set(existing_csv_df['candidate_profile_id'].dropna())
+                        existing_csv_ids.discard('')
 
-                    # Filter duplicates
-                    new_csv_filtered = new_df[
-                        ~(new_df['candidate_profile_id'].isin(existing_csv_ids))
-                    ].copy()
+                        # Filter duplicates
+                        new_csv_filtered = new_df[
+                            ~(new_df['candidate_profile_id'].isin(existing_csv_ids))
+                        ].copy()
 
-                    duplicates = len(new_df) - len(new_csv_filtered)
-                    if duplicates > 0:
-                        self.log(f"⚠️  Skipped {duplicates} duplicate(s) in CSV")
+                        duplicates = len(new_df) - len(new_csv_filtered)
+                        if duplicates > 0:
+                            self.log(f"⚠️  Skipped {duplicates} duplicate(s) in CSV")
 
-                    if len(new_csv_filtered) == 0:
-                        self.log("ℹ️  No new candidates for CSV - all duplicates")
-                        csv_df = existing_csv_df
-                    else:
-                        csv_df = pd.concat([existing_csv_df, new_csv_filtered], ignore_index=True)
-                        self.log(f"➕ Added {len(new_csv_filtered)} new records to CSV")
+                        if len(new_csv_filtered) == 0:
+                            self.log("ℹ️  No new candidates for CSV - all duplicates")
+                            csv_df = existing_csv_df
+                        else:
+                            csv_df = pd.concat([existing_csv_df, new_csv_filtered], ignore_index=True)
+                            self.log(f"➕ Added {len(new_csv_filtered)} new records to CSV")
 
-                    # Delete old CSV
-                    try:
-                        os.remove(latest_csv)
-                        self.log(f"🗑️  Deleted old CSV: {latest_csv}")
-                    except Exception as del_err:
-                        self.log(f"⚠️  Could not delete old CSV: {del_err}")
+                        # Delete old CSV
+                        try:
+                            os.remove(latest_csv)
+                            self.log(f"🗑️  Deleted old CSV: {latest_csv}")
+                        except Exception as del_err:
+                            self.log(f"⚠️  Could not delete old CSV: {del_err}")
                 else:
                     csv_df = new_df
                     self.log("📝 Creating new CSV file")
 
-                # Save new CSV (only export columns, hide profile-url)
+                # Sort CSV data by date-updated (most recent first)
+                if 'date-updated' in csv_df.columns:
+                    try:
+                        def parse_relative_time(time_str):
+                            """Convert relative time strings to days for sorting"""
+                            if not time_str or pd.isna(time_str):
+                                return 999999  # Put empty values at the end
+
+                            time_str = str(time_str).lower().strip()
+
+                            # Extract number and unit
+                            import re
+                            match = re.search(r'(\d+)\s*(day|week|month|year)', time_str)
+                            if not match:
+                                return 999999  # Unknown format goes to end
+
+                            number = int(match.group(1))
+                            unit = match.group(2)
+
+                            # Convert to days
+                            if unit == 'day':
+                                return number
+                            elif unit == 'week':
+                                return number * 7
+                            elif unit == 'month':
+                                return number * 30
+                            elif unit == 'year':
+                                return number * 365
+
+                            return 999999
+
+                        # Create temporary sort column
+                        csv_df['_temp_sort_days'] = csv_df['date-updated'].apply(parse_relative_time)
+                        csv_df = csv_df.sort_values(by='_temp_sort_days', ascending=True, na_position='last')
+                        csv_df = csv_df.drop(columns=['_temp_sort_days'])
+                        self.log(f"🔄 Sorted CSV candidates by date-updated (most recent first)")
+                    except Exception as e:
+                        self.log(f"⚠️  Could not sort CSV by date-updated: {e}")
+
+                # Save new CSV with search parameters as header comments
                 csv_filename = f"dice_candidates_{self.timestamp}.csv"
-                csv_df[export_columns].to_csv(csv_filename, index=False)
+
+                # Write search parameters as comments at the top
+                with open(csv_filename, 'w', encoding='utf-8') as f:
+                    f.write("# SEARCH PARAMETERS\n")
+                    for key, value in search_params.items():
+                        f.write(f"# {key}: {value}\n")
+                    f.write("#\n")
+
+                # Append the actual data
+                csv_df[export_columns].to_csv(csv_filename, index=False, mode='a')
+
                 self.log(f"✅ Data saved to CSV: {csv_filename}")
                 self.log(f"📊 Total CSV records: {len(csv_df)}")
+                self.log(f"📋 CSV includes search parameters as header comments")
                 self.log(f"🔒 Hidden column: profile-url (kept for duplicate checking)")
+
+                return csv_filename
 
             except Exception as csv_error:
                 self.log(f"❌ Error saving to CSV: {csv_error}")
                 self.log(f"🐛 CSV Debug: {traceback.format_exc()}")
+                return None
 
     def run_complete_process(self):
         """Run the complete process from login to data extraction"""
@@ -1568,7 +1757,7 @@ class DiceCompleteScraper:
 
             # Step 5: Save results
             self.log("\n💾 Step 3: Saving results...")
-            self.save_to_excel()
+            saved_file = self.save_to_excel()
 
             # Final summary
             end_time = time.time()
@@ -1587,12 +1776,12 @@ class DiceCompleteScraper:
                 self.log(f"   📁 Debug files saved in: {self.debug_folder}/")
                 self.log(f"   💡 You can delete this folder later: rm -rf {self.debug_folder}")
 
-            return True
+            return saved_file
 
         except Exception as e:
             self.log(f"❌ Process failed: {e}")
             self.take_screenshot(self.page, "error_screenshot")
-            return False
+            return None
 
         finally:
             # Cleanup
@@ -1602,6 +1791,34 @@ class DiceCompleteScraper:
                 self.log("🧹 Browser cleanup complete")
             except:
                 pass
+
+def open_excel_file(filename):
+    """Open Excel or CSV file with the default application"""
+    if not filename:
+        return False
+
+    try:
+        import platform
+        system = platform.system()
+
+        if system == 'Darwin':  # macOS
+            subprocess.run(['open', filename], check=True)
+        elif system == 'Windows':
+            os.startfile(filename)
+        elif system == 'Linux':
+            subprocess.run(['xdg-open', filename], check=True)
+        else:
+            print(f"⚠️  Unable to open file automatically on {system}")
+            print(f"📂 File location: {os.path.abspath(filename)}")
+            return False
+
+        print(f"📂 Opened file: {filename}")
+        return True
+
+    except Exception as e:
+        print(f"⚠️  Could not open file automatically: {e}")
+        print(f"📂 File location: {os.path.abspath(filename)}")
+        return False
 
 def main():
     """Main function with command line arguments"""
@@ -1721,10 +1938,15 @@ Examples:
 
     # Create and run scraper
     scraper = DiceCompleteScraper(debug_mode=args.debug, max_pages=max_pages)
-    success = scraper.run_complete_process()
+    saved_file = scraper.run_complete_process()
 
-    if success:
+    if saved_file:
         print(f"\n🎉 Success! Check the Excel files for candidate data.")
+        print(f"📂 Saved file: {saved_file}")
+
+        # Open the file automatically
+        print(f"\n📂 Opening file...")
+        open_excel_file(saved_file)
     else:
         print(f"\n❌ Process failed. Check the output above for details.")
         print(f"💡 Try running with --debug flag to see what's happening.")

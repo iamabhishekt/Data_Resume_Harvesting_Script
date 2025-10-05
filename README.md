@@ -1,229 +1,113 @@
-# Dice Resume Harvesting Script
+# 🎯 Dice Resume Harvesting Script
 
-Complete solution for scraping candidate data from Dice.com talent search with filter application and Excel export.
+A powerful automated tool to scrape and collect candidate resumes from Dice.com with advanced features including duplicate detection, automatic query generation, and smart sorting.
 
-## Features
+## ✨ Features
 
-✅ **Comprehensive Filtering** - Applies 9 different search filters
-✅ **Data Extraction** - Extracts 15 fields per candidate
-✅ **Profile Tracking** - Detects if profiles have been viewed
-✅ **Excel Export** - Clean, organized output with timestamps
-✅ **Debug Mode** - Screenshots and HTML saved in organized folders
-✅ **Multi-page Support** - Scrape up to 10 pages
+- 🤖 **Automated Resume Scraping** - Uses Playwright for reliable browser automation
+- 🔍 **Smart Search** - Boolean query generation using OpenAI ChatGPT API
+- 🚫 **Duplicate Detection** - Automatically filters out duplicate candidates
+- 📊 **Excel & CSV Export** - Multi-sheet Excel files with search parameters
+- 🔄 **Auto-Regeneration** - Updates search queries when job description changes
+- 📅 **Smart Sorting** - Sorts candidates by most recent update
+- 🎨 **Clean Output** - Hidden profile URLs, organized data structure
+- 🔒 **Secure** - Uses environment variables for credentials
 
-## Quick Start
+## 📋 Requirements
 
-```bash
-# Basic usage - Headless mode, 1 page
-python dice_complete.py
+- Python 3.8 or higher
+- Dice.com account with employer access
+- OpenAI API key (for automatic query generation)
 
-# Debug mode - See browser, save screenshots
-python dice_complete.py --debug
+## 🚀 Quick Start - ONE CLICK SETUP
 
-# Multiple pages
-python dice_complete.py --pages 5
+### For macOS/Linux:
+\`\`\`bash
+chmod +x setup.sh run.sh
+./setup.sh
+\`\`\`
 
-# Debug + multiple pages
-python dice_complete.py --debug --pages 3
-```
+### For Windows:
+\`\`\`cmd
+setup.bat
+\`\`\`
 
-## Files Generated
+### Configuration
 
-### Excel Output
-- **Format**: `dice_candidates_YYYYMMDD_HHMMSS.xlsx`
-- **Location**: Current directory
-- **Contains**: All candidate data with 14 fields
+1. Copy \`.env.example\` to \`.env\`:
+\`\`\`bash
+cp .env.example .env
+\`\`\`
 
-### Debug Files (Debug Mode Only)
-- **Folder**: `debug_YYYYMMDD_HHMMSS/`
-- **Contains**:
-  - Screenshots (PNG files) at each step
-  - HTML files for manual inspection
-  - Same timestamp as Excel file
+2. Edit \`.env\` with your credentials:
+\`\`\`env
+DICE_EMAIL=your_email@example.com
+DICE_PASSWORD=your_password
+OPENAI_API_KEY=your_openai_api_key
+\`\`\`
 
-## Extracted Data Fields
+3. (Optional) Edit \`job_description.txt\` with your job requirements
 
-| Field | Description |
-|-------|-------------|
-| profile-name-text | Candidate's full name |
-| profile-url | Link to candidate profile |
-| **profile-viewed** | **Whether profile has been viewed (Yes/No)** |
-| pref-prev-job-title | Preferred/Previous job title |
-| location | Candidate location |
-| work-exp | Work experience |
-| work-permit | Work authorization status |
-| willing-to-relocate | Relocation preference |
-| compensation | Desired salary |
-| desired-work-setting | Remote/Hybrid/Onsite |
-| date-updated | Profile last updated |
-| date-last-active | Last active on platform |
-| likely-to-switch | Likelihood to switch jobs |
-| scraped-date | When data was scraped |
-| page-number | Which page found on |
+### Running the Script
 
-## Applied Filters
+#### For macOS/Linux:
+\`\`\`bash
+./run.sh
+\`\`\`
 
-The script automatically applies these filters:
-1. ✅ Boolean/Keyword search (Appian Developer + skills)
-2. ✅ Location (McLean, VA, USA)
-3. ✅ Distance (50 miles)
-4. ✅ Willing to relocate
-5. ✅ Last active (20 days)
-6. ✅ Profile source (Any)
-7. ✅ Contact methods (unchecked)
-8. ✅ Additional filters (unchecked)
-9. ✅ Search execution
+#### For Windows:
+\`\`\`cmd
+run.bat
+\`\`\`
 
-## Cleanup Debug Files
+## 📖 Usage
 
-### Manual Cleanup
-```bash
-# Delete specific debug folder
-rm -rf debug_20251004_144149
+### Basic Usage
 
-# Delete all debug folders
-rm -rf debug_*
-```
+Run the script and follow the prompts for location, distance, and days.
 
-### Automated Cleanup
-```bash
-# Use the cleanup script
-./cleanup_debug.sh
-```
+### Command Line Options
 
-The cleanup script will:
-- Show all debug folders
-- Display total size
-- Ask for confirmation before deleting
+\`\`\`bash
+python3 dice_complete.py --pages 5      # Scrape 5 pages
+python3 dice_complete.py --debug        # Enable debug mode
+\`\`\`
 
-## Configuration
+### Generate Boolean Query
 
-### Boolean Query (Search Keywords)
+\`\`\`bash
+python3 dice_api.py
+\`\`\`
 
-**NEW**: The Boolean query is now loaded from `Dice_string.txt` instead of hardcoded!
+## 📂 Output Files
 
-**Option 1: Auto-generate with ChatGPT** (Recommended)
-```bash
-# 1. Edit job_description.txt with your job requirements
-# 2. Set up .env with OPENAI_API_KEY=sk-your-key
-# 3. Generate query
-python dice_api.py
+- \`dice_candidates_YYYYMMDD_HHMMSS.xlsx\` - Excel with 2 sheets (Candidates + Search Parameters)
+- \`dice_candidates_YYYYMMDD_HHMMSS.csv\` - CSV backup
 
-# The query is saved to Dice_string.txt and automatically used
-```
+## 🛠️ Troubleshooting
 
-**Option 2: Manual editing**
-```bash
-# Edit the query directly
-nano Dice_string.txt
-```
+**Setup Issues:**
+- Ensure Python 3.8+ is installed
+- Run \`pip3 install -r requirements.txt\` manually if setup fails
+- Run \`playwright install chromium\` to install browser
 
-**Option 3: Use default** (Appian Developer)
-```bash
-# If Dice_string.txt doesn't exist, default query is used
-```
+**Runtime Issues:**
+- Check \`.env\` file has correct credentials
+- Verify Boolean query in \`Dice_string.txt\`
+- Use \`--debug\` flag to see detailed output
 
-📖 See [QUERY_GENERATION_GUIDE.md](QUERY_GENERATION_GUIDE.md) for detailed instructions.
+## 📚 Documentation
 
-### Other Settings
+- \`MANUAL_QUERY_GUIDE.md\` - Pre-built queries for 10 common roles
+- \`AUTO_REGENERATION_FEATURE.md\` - Query regeneration guide
+- \`FEATURE_COMPLETE_SUMMARY.txt\` - Complete feature list
 
-Edit in `dice_complete.py`:
-```python
-LOCATION = 'McLean, VA, USA'
-DISTANCE_MILES = 50
-LAST_ACTIVE_DAYS = 30
-```
+## 🔒 Security
 
-## Requirements
+- Never commit \`.env\` file
+- Keep credentials secure
+- Handle candidate data responsibly
 
-```bash
-pip install playwright pandas openpyxl
-playwright install chromium
-```
+---
 
-## Command Line Options
-
-```bash
-python dice_complete.py --help
-
-options:
-  -h, --help     show this help message and exit
-  --debug        Run in visible browser mode for debugging
-  --pages PAGES  Number of pages to scrape (default: 1, max: 10)
-```
-
-## Example Output
-
-```
-🎲 === Complete Dice Scraper ===
-🔍 Debug Mode: ON
-📄 Pages to scrape: 2
-⏰ Start time: 2025-10-04 14:42:10
-==================================================
-
-[14:42:15] INFO: ✅ Successfully navigated to search page
-[14:42:18] INFO: ✅ Filters applied successfully
-[14:42:20] INFO: ✅ Extracted 2 candidates from current page
-[14:42:20] INFO: ✅ Data saved to dice_candidates_20251004_144149.xlsx
-
-🎉 === PROCESS COMPLETED SUCCESSFULLY ===
-⏱️ Total duration: 30.65 seconds
-👥 Total candidates extracted: 2
-📄 Pages processed: 1
-📁 Debug files saved in: debug_20251004_144149/
-💡 You can delete this folder later: rm -rf debug_20251004_144149
-```
-
-## Troubleshooting
-
-### No candidates extracted
-- Check if you're logged in (cookies may be expired)
-- Try running with `--debug` to see what's happening
-- Verify search filters are appropriate
-
-### Browser not launching
-```bash
-playwright install chromium
-```
-
-### Excel not saving
-```bash
-pip install openpyxl pandas
-```
-
-### Permission errors on cleanup
-```bash
-chmod +x cleanup_debug.sh
-```
-
-## File Structure
-
-```
-Data_Resume_Harvesting_Script/
-├── dice_complete.py          # Main script
-├── dice-filters.py            # Filter reference
-├── dice_web_scrap.py          # Extraction reference
-├── cleanup_debug.sh           # Debug cleanup script
-├── README.md                  # This file
-├── dice_candidates_*.xlsx     # Output files
-└── debug_*/                   # Debug folders (optional)
-    ├── browser_setup.png
-    ├── browser_setup.html
-    ├── search_page_loaded.png
-    ├── search_page_loaded.html
-    ├── filters_applied.png
-    ├── filters_applied.html
-    ├── page_1_results.png
-    └── page_1_results.html
-```
-
-## Notes
-
-- Debug files can be large (2-5 MB per run)
-- Regular cleanup recommended to save disk space
-- Excel files are compact (~5-10 KB per run)
-- Timestamps ensure no file overwrites
-
-## License
-
-For internal use only.
+**Made with ❤️ for recruiters and hiring managers**
