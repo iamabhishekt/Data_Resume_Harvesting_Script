@@ -53,9 +53,11 @@ def load_boolean_query():
 
 # Load the Boolean query at startup
 BOOLEAN = load_boolean_query()
-LOCATION = 'McLean, VA, USA'
-DISTANCE_MILES = 50
-LAST_ACTIVE_DAYS = 30
+
+# These will be set by user input or defaults
+LOCATION = None
+DISTANCE_MILES = None
+LAST_ACTIVE_DAYS = None
 
 # Login cookies (from dice_login.py)
 cookies_json = [
@@ -466,6 +468,54 @@ USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0',
     'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
 ]
+
+def get_search_parameters():
+    """Get search parameters from user input with validation"""
+    print("\n" + "=" * 60)
+    print("🔍 SEARCH PARAMETERS")
+    print("=" * 60)
+
+    # Get Location
+    while True:
+        location = input("\n📍 Enter location (min 3 characters, e.g., 'McLean, VA, USA'): ").strip()
+        if len(location) < 3:
+            print("❌ Error: Location must be at least 3 characters long!")
+            continue
+        break
+
+    # Get Distance
+    while True:
+        distance_input = input("📏 Enter distance in miles (e.g., '50'): ").strip()
+        if not distance_input.isdigit():
+            print("❌ Error: Distance must be a numeric value!")
+            continue
+        distance = int(distance_input)
+        if distance <= 0:
+            print("❌ Error: Distance must be greater than 0!")
+            continue
+        break
+
+    # Get Last Active Days
+    while True:
+        days_input = input("📅 Enter last active days (e.g., '30'): ").strip()
+        if not days_input.isdigit():
+            print("❌ Error: Days must be a numeric value!")
+            continue
+        days = int(days_input)
+        if days <= 0:
+            print("❌ Error: Days must be greater than 0!")
+            continue
+        break
+
+    print("\n" + "=" * 60)
+    print("✅ SEARCH PARAMETERS CONFIRMED")
+    print("=" * 60)
+    print(f"📍 Location: {location}")
+    print(f"📏 Distance: {distance} miles")
+    print(f"📅 Last Active: {days} days")
+    print("=" * 60 + "\n")
+
+    return location, distance, days
 
 class DiceCompleteScraper:
     def __init__(self, debug_mode=False, max_pages=1):
@@ -1623,9 +1673,10 @@ def main():
 
 This script handles the entire process:
 1. 🔐 Login with saved cookies
-2. 🎯 Apply search filters (Appian + SAIL, McLean VA, etc.)
-3. 📊 Extract candidate data from search results
-4. 💾 Save to Excel file with timestamp
+2. 📝 Prompt for search parameters (location, distance, days)
+3. 🎯 Apply search filters (Appian + SAIL, custom location, etc.)
+4. 📊 Extract candidate data from search results
+5. 💾 Save to Excel file with timestamp
 
 Usage:
   python dice_complete.py                    # Headless mode, 1 page
@@ -1634,10 +1685,10 @@ Usage:
   python dice_complete.py --debug --pages 3  # Debug mode, 3 pages
 
 Search Configuration:
-• Keywords: Appian OR "Appian Developer" OR "Appian Engineer" (with SAIL, BPM, etc.)
-• Location: McLean, VA, USA
-• Distance: 50 miles
-• Last Active: 20 days
+• Keywords: Loaded from Dice_string.txt (or default Appian query)
+• Location: User input required (min 3 characters)
+• Distance: User input required (numeric, in miles)
+• Last Active: User input required (numeric, in days)
 
 Output:
 • Excel file: dice_candidates_YYYYMMDD_HHMMSS.xlsx
@@ -1663,6 +1714,10 @@ Examples:
     print(f"📄 Pages to scrape: {max_pages}")
     print(f"⏰ Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 50)
+
+    # Get search parameters from user
+    global LOCATION, DISTANCE_MILES, LAST_ACTIVE_DAYS
+    LOCATION, DISTANCE_MILES, LAST_ACTIVE_DAYS = get_search_parameters()
 
     # Create and run scraper
     scraper = DiceCompleteScraper(debug_mode=args.debug, max_pages=max_pages)
