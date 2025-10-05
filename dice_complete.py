@@ -1251,13 +1251,14 @@ class DiceCompleteScraper:
                     break
 
     def save_to_excel(self):
-        """Save candidate data to Excel file"""
+        """Save candidate data to Excel file - append to existing or create new"""
         if not self.all_candidates:
             self.log("❌ No candidates to save")
             return
 
-        # Define columns and order (matching the extraction field names)
-        columns = [
+        # Define all columns (for internal processing)
+        all_columns = [
+            'candidate_profile_id',
             'profile-name-text',
             'profile-url',
             'profile-viewed',
@@ -1275,38 +1276,212 @@ class DiceCompleteScraper:
             'page-number'
         ]
 
-        # Create DataFrame
-        df = pd.DataFrame(self.all_candidates)
+        # Define columns to export (excluding profile-url)
+        export_columns = [
+            'candidate_profile_id',
+            'profile-name-text',
+            'profile-viewed',
+            'pref-prev-job-title',
+            'location',
+            'work-exp',
+            'work-permit',
+            'willing-to-relocate',
+            'compensation',
+            'desired-work-setting',
+            'date-updated',
+            'date-last-active',
+            'likely-to-switch',
+            'scraped-date',
+            'page-number'
+        ]
 
-        # Reorder columns according to defined order
-        df = df.reindex(columns=columns, fill_value='')
+        # Create DataFrame for new candidates
+        new_df = pd.DataFrame(self.all_candidates)
 
-        # Use the same timestamp as the debug folder
-        filename = f"dice_candidates_{self.timestamp}.xlsx"
+        # Extract candidate_profile_id from profile-url
+        # URL format: https://www.dice.com/employer/talent/profile/PROFILE_ID?searchId=...
+        # We only want the UUID before the ?
+        def extract_profile_id(url):
+            if pd.isna(url) or url == '':
+                return ''
+            try:
+                # Extract the last part of the URL path
+                parts = url.rstrip('/').split('/')
+                profile_id = parts[-1] if parts else ''
+                # Remove query parameters (everything after ?)
+                profile_id = profile_id.split('?')[0]
+                return profile_id
+            except:
+                return ''
+
+        new_df['candidate_profile_id'] = new_df['profile-url'].apply(extract_profile_id)
+
+        # Reorder columns according to all_columns (keep profile-url for processing)
+        new_df = new_df.reindex(columns=all_columns, fill_value='')
+
+        # Find the most recent existing file
+        import glob
+        existing_files = glob.glob("dice_candidates_*.xlsx")
 
         try:
-            df.to_excel(filename, index=False, engine='openpyxl')
-            self.log(f"✅ Data saved to {filename}")
-            self.log(f"📊 Total records: {len(df)}")
-            self.log(f"📝 Columns: {', '.join(df.columns)}")
+            if existing_files:
+                # Sort by modification time, get the most recent
+                existing_files.sort(key=os.path.getmtime, reverse=True)
+                latest_file = existing_files[0]
+                self.log(f"📂 Found existing file: {latest_file}")
+
+                # Read existing data
+                existing_df = pd.read_excel(latest_file, engine='openpyxl')
+                self.log(f"📊 Existing records: {len(existing_df)}")
+
+                # Ensure existing_df has candidate_profile_id column
+                if 'candidate_profile_id' not in existing_df.columns:
+                    self.log("🔧 Adding candidate_profile_id to existing data...")
+                    existing_df['candidate_profile_id'] = existing_df['profile-url'].apply(extract_profile_id)
+                else:
+                    # Re-extract profile IDs to ensure they don't have ?searchId
+                    self.log("🔧 Cleaning candidate_profile_id in existing data...")
+                    existing_df['candidate_profile_id'] = existing_df['profile-url'].apply(extract_profile_id)
+
+                # Get existing profile IDs for duplicate checking
+                existing_profile_ids = set(existing_df['candidate_profile_id'].dropna())
+                existing_profile_ids.discard('')  # Remove empty strings
+
+                self.log(f"🔍 Checking for duplicates against {len(existing_profile_ids)} existing profiles...")
+
+                # Filter out duplicates from new data
+                # Check only profile ID (since it's the unique identifier)
+                new_df_filtered = new_df[
+                    ~(new_df['candidate_profile_id'].isin(existing_profile_ids))
+                ].copy()
+
+                duplicates_found = len(new_df) - len(new_df_filtered)
+                if duplicates_found > 0:
+                    self.log(f"⚠️  Skipped {duplicates_found} duplicate candidate(s) found in existing data")
+                    self.log(f"✅ {len(new_df_filtered)} new unique candidate(s) to add")
+                else:
+                    self.log(f"✅ All {len(new_df_filtered)} candidates are new (no duplicates)")
+
+                if len(new_df_filtered) == 0:
+                    self.log("ℹ️  No new candidates to add - all were duplicates")
+                    # Still create new file with updated timestamp
+                    df = existing_df
+                else:
+                    # Append only non-duplicate new data
+                    combined_df = pd.concat([existing_df, new_df_filtered], ignore_index=True)
+                    self.log(f"➕ Added {len(new_df_filtered)} new records")
+                    df = combined_df
+
+                # Delete the old file before creating new one
+                try:
+                    os.remove(latest_file)
+                    self.log(f"🗑️  Deleted old file: {latest_file}")
+                except Exception as e:
+                    self.log(f"⚠️  Could not delete old file: {e}")
+
+            else:
+                self.log(f"📝 No existing files found - creating new file")
+                df = new_df
+                self.log(f"✅ {len(df)} new candidates to save")
+
+            # Save to timestamped file (only export columns, hide profile-url)
+            timestamped_filename = f"dice_candidates_{self.timestamp}.xlsx"
+            df[export_columns].to_excel(timestamped_filename, index=False, engine='openpyxl')
+            self.log(f"✅ Data saved to {timestamped_filename}")
+            self.log(f"📊 Total records in file: {len(df)}")
+            self.log(f"🔒 Hidden column: profile-url (kept for duplicate checking)")
 
             # Show sample data
-            self.log("\n📋 Sample data:")
-            for i, row in df.head(3).iterrows():
-                name = row.get('profile-name-text', 'N/A')
-                location = row.get('location', 'N/A')
-                title = row.get('pref-prev-job-title', 'N/A')
-                self.log(f"   {i+1}. {name} - {location} - {title}")
+            if existing_files:
+                self.log("\n📋 Sample of newly added unique candidates:")
+                sample_df = new_df[
+                    ~(new_df['candidate_profile_id'].isin(existing_profile_ids)) &
+                    ~(new_df['profile-url'].isin(existing_urls))
+                ]
+                for i, (idx, row) in enumerate(sample_df.head(3).iterrows(), 1):
+                    name = row.get('profile-name-text', 'N/A')
+                    location = row.get('location', 'N/A')
+                    title = row.get('pref-prev-job-title', 'N/A')
+                    profile_id = row.get('candidate_profile_id', 'N/A')
+                    self.log(f"   {i}. {name} ({profile_id}) - {location} - {title}")
+            else:
+                self.log("\n📋 Sample of candidates:")
+                for i, (idx, row) in enumerate(new_df.head(3).iterrows(), 1):
+                    name = row.get('profile-name-text', 'N/A')
+                    location = row.get('location', 'N/A')
+                    title = row.get('pref-prev-job-title', 'N/A')
+                    profile_id = row.get('candidate_profile_id', 'N/A')
+                    self.log(f"   {i}. {name} ({profile_id}) - {location} - {title}")
 
         except Exception as e:
             self.log(f"❌ Error saving to Excel: {e}")
-            # Fallback to CSV
-            csv_filename = filename.replace('.xlsx', '.csv')
+            import traceback
+            self.log(f"🐛 Debug: {traceback.format_exc()}")
+
+            # Fallback to CSV with same append/delete logic
+            self.log("📋 Falling back to CSV format...")
+
             try:
-                df.to_csv(csv_filename, index=False)
-                self.log(f"✅ Data saved to CSV instead: {csv_filename}")
+                # Find existing CSV files
+                import glob
+                existing_csv_files = glob.glob("dice_candidates_*.csv")
+
+                if existing_csv_files:
+                    # Sort by modification time, get the most recent
+                    existing_csv_files.sort(key=os.path.getmtime, reverse=True)
+                    latest_csv = existing_csv_files[0]
+                    self.log(f"📂 Found existing CSV: {latest_csv}")
+
+                    # Read existing CSV data
+                    existing_csv_df = pd.read_csv(latest_csv)
+                    self.log(f"📊 Existing CSV records: {len(existing_csv_df)}")
+
+                    # Ensure candidate_profile_id exists
+                    if 'candidate_profile_id' not in existing_csv_df.columns:
+                        existing_csv_df['candidate_profile_id'] = existing_csv_df['profile-url'].apply(extract_profile_id)
+                    else:
+                        existing_csv_df['candidate_profile_id'] = existing_csv_df['profile-url'].apply(extract_profile_id)
+
+                    # Get existing profile IDs
+                    existing_csv_ids = set(existing_csv_df['candidate_profile_id'].dropna())
+                    existing_csv_ids.discard('')
+
+                    # Filter duplicates
+                    new_csv_filtered = new_df[
+                        ~(new_df['candidate_profile_id'].isin(existing_csv_ids))
+                    ].copy()
+
+                    duplicates = len(new_df) - len(new_csv_filtered)
+                    if duplicates > 0:
+                        self.log(f"⚠️  Skipped {duplicates} duplicate(s) in CSV")
+
+                    if len(new_csv_filtered) == 0:
+                        self.log("ℹ️  No new candidates for CSV - all duplicates")
+                        csv_df = existing_csv_df
+                    else:
+                        csv_df = pd.concat([existing_csv_df, new_csv_filtered], ignore_index=True)
+                        self.log(f"➕ Added {len(new_csv_filtered)} new records to CSV")
+
+                    # Delete old CSV
+                    try:
+                        os.remove(latest_csv)
+                        self.log(f"🗑️  Deleted old CSV: {latest_csv}")
+                    except Exception as del_err:
+                        self.log(f"⚠️  Could not delete old CSV: {del_err}")
+                else:
+                    csv_df = new_df
+                    self.log("📝 Creating new CSV file")
+
+                # Save new CSV (only export columns, hide profile-url)
+                csv_filename = f"dice_candidates_{self.timestamp}.csv"
+                csv_df[export_columns].to_csv(csv_filename, index=False)
+                self.log(f"✅ Data saved to CSV: {csv_filename}")
+                self.log(f"📊 Total CSV records: {len(csv_df)}")
+                self.log(f"🔒 Hidden column: profile-url (kept for duplicate checking)")
+
             except Exception as csv_error:
                 self.log(f"❌ Error saving to CSV: {csv_error}")
+                self.log(f"🐛 CSV Debug: {traceback.format_exc()}")
 
     def run_complete_process(self):
         """Run the complete process from login to data extraction"""
