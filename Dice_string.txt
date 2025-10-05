@@ -1,0 +1,1 @@
+("SDET" OR "Software Development Engineer in Test") AND (Java OR Python OR Unix OR AWS OR Selenium OR Cucumber OR "Automated Testing" OR "CI/CD" OR "Reliability Engineering" OR "Unix shell scripting" OR Angular OR Maven OR Jenkins OR Puppet OR Chef)

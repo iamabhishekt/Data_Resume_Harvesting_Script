@@ -1,36 +1,57 @@
-Role           :-        Senior Appian Developer
+Role : SDET Automation / FTE
 
-Location   :-        Onsite (Reston, VA & Plano, TX)
+Location : Reston, VA
 
-Salary        
+Job type- Onsite
 
- 
 
-Job Description:
 
- 
 
-An Appian Architect designs, builds, and maintains business process automation solutions using the Appian low-code platform. Responsibilities include gathering and analyzing requirements, developing process models and SAIL interfaces, integrating with other systems, performing testing and maintenance, and providing user support. Key skills required are proficiency with the Appian platform, low-code development, process automation, integration techniques, database management, and a customer-oriented approach.
 
-Responsibilities
-• Design and Development: Create custom applications and solutions on the Appian platform to automate business processes.
-• Requirements Analysis: Collaborate with stakeholders and business analysts to understand and translate business needs into technical solutions.
-• Process Modeling: Design and build workflows and process models within the Appian platform.
-• Integration: Develop integrations with other third-party systems and platforms.
-• User Interface (UI) Development: Create user-friendly and responsive interfaces using SAIL and other Appian tools.
-• Data Management: Implement data models and ensure data integrity within the applications.
-• Testing and Debugging: Conduct testing to ensure the functionality, performance, and security of developed solutions.
-• Maintenance and Optimization: Troubleshoot issues, perform performance tuning, and maintain existing Appian applications.
-• Documentation: Create technical documentation, user guides, and training materials for developed solutions.
-• Mentorship: Provide technical guidance and support to junior developers.
+Note : Please share the skill matrix for each submission using below format -
 
-Key Skills & Qualifications
-• Appian Platform: Strong proficiency in the Appian low-code platform and its tools specifically Appian UI and RPA development and integration patterns.
-• Low-Code Development: Experience with low-code development principles and practices.
-• Business Process Management (BPM): Understanding of BPM concepts and tools.
-• Software Development: Background in software engineering, including experience with technologies like JavaScript, Java/J2EE, or C#.
-• Problem-Solving: Ability to analyze complex problems and develop efficient technical solutions.
-• Communication: Strong verbal and written communication skills to interact with stakeholders and create documentation.
-• Continuous Learning: A commitment to staying updated on new Appian platform features and industry trends.
-• Customer Focus: A mindset focused on understanding and meeting end-user needs to deliver user-friendly applications
 
+
+Skills
+
+Years of Experience
+
+Rating ( Out of 5 )
+
+Java
+
+Selenium
+
+Cucumber
+
+AWS
+
+Python
+
+Unix
+
+
+
+Job Description -
+
+•             Candidate must have experience in SDET (Java, Selenium and Cucumber)
+
+•             Experience in Automated Testing and about 8-10 Years of overall Testing experience.
+
+•             Solid understanding of Java/J2EE or Python development to be able to design, implement and triage defects or issues
+
+•             Knowledge/ experience with AWS services such as Lambda, RDS, Redshift, EC2, EMR etc
+
+•             Ability to build automation testing frameworks from scratch (Selenium, Cucumber, etc...)
+
+•             Demonstrates an understanding of good software engineering practices including CI/CD, Automated testing and Reliability engineering (SRE)
+
+•             Very strong scripting skills with Unix shell scripting, python and UI development using Angular to enhance and maintain exiting test platforms
+
+Desired:
+
+•             Exposure to new DevOps tools such as Maven, Jenkins, Puppet, Chef, etc.
+
+•             Ability to drive innovation and adoption of leading test platforms/ solutions.
+
+•             Financial/Mortgage industry background.
