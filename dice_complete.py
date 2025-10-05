@@ -4,7 +4,6 @@ Complete Dice Talent Search and Scraping Script
 Handles: Login → Filter Application → Data Extraction → Export
 """
 
-import subprocess
 import sys
 import time
 import json
@@ -15,49 +14,20 @@ import pandas as pd
 from playwright.sync_api import sync_playwright
 
 # ===== Configuration =====
-def load_boolean_query():
-    """Load Boolean query from Dice_string.txt or use default"""
-    dice_string_file = "Dice_string.txt"
+BOOLEAN = '(Appian OR "Appian Developer" OR "Appian Engineer" OR "Appian Architect" OR "Appian BPM" OR "Appian Designer" OR "Appian Consultant") AND (SAIL OR "Appian UI" OR "Appian RPA" OR "Appian Integration" OR "Appian Automation") AND ("Business Process Management" OR BPM) AND (Java OR J2EE OR "JavaScript" OR C#) AND ("low-code" OR "low code" OR "low-code development") AND (workflow OR "process modeling" OR "workflow automation") AND (integration OR API OR "third-party systems") AND (SQL OR "data modeling" OR "data management") AND (AWS OR "Amazon Web Services" OR "Cloud Integration")'
+LOCATION = ""                # set interactively
+DISTANCE_MILES = None        # set interactively
+LAST_ACTIVE_DAYS = 7         # set interactively
 
-    # Try to read from Dice_string.txt
-    if os.path.exists(dice_string_file):
-        try:
-            with open(dice_string_file, 'r', encoding='utf-8') as f:
-                query = f.read().strip()
-                if query:
-                    print(f"✅ Loaded Boolean query from {dice_string_file}")
-                    return query
-        except Exception as e:
-            print(f"⚠️ Error reading {dice_string_file}: {e}")
+# ----- Bounds you asked for -----
+MIN_DISTANCE, MAX_DISTANCE = 50, 100
+MAX_LAST_ACTIVE_DAYS = 45
 
-    # If file doesn't exist or is empty, try to generate it
-    print(f"⚠️ {dice_string_file} not found or empty")
+# Custom exception for constraint violations
+class ConstraintError(Exception):
+    pass
 
-    if os.path.exists("job_description.txt"):
-        print("📝 Found job_description.txt, attempting to generate Boolean query...")
-        try:
-            # Import and run dice_api to generate the query
-            from dice_api import generate_dice_query_with_chatgpt
-            query = generate_dice_query_with_chatgpt("job_description.txt", dice_string_file)
-            if query:
-                print(f"✅ Generated Boolean query using ChatGPT")
-                return query
-        except ImportError:
-            print("⚠️ dice_api.py not found, cannot auto-generate query")
-        except Exception as e:
-            print(f"⚠️ Error generating query: {e}")
-
-    # Fallback to default query
-    print("📋 Using default Boolean query (Appian Developer)")
-    return '(Appian OR "Appian Developer" OR "Appian Engineer" OR "Appian Architect" OR "Appian BPM" OR "Appian Designer" OR "Appian Consultant") AND (SAIL OR "Appian UI" OR "Appian RPA" OR "Appian Integration" OR "Appian Automation") AND ("Business Process Management" OR BPM) AND (Java OR J2EE OR "JavaScript" OR C#) AND ("low-code" OR "low code" OR "low-code development") AND (workflow OR "process modeling" OR "workflow automation") AND (integration OR API OR "third-party systems") AND (SQL OR "data modeling" OR "data management") AND (AWS OR "Amazon Web Services" OR "Cloud Integration")'
-
-# Load the Boolean query at startup
-BOOLEAN = load_boolean_query()
-LOCATION = 'McLean, VA, USA'
-DISTANCE_MILES = 50
-LAST_ACTIVE_DAYS = 30
-
-# Login cookies (from dice_login.py)
+# ===== Login cookies (from dice_login.py) =====
 cookies_json = [
     {
         "domain": "www.dice.com",
@@ -458,7 +428,7 @@ cookies_json = [
     }
 ]
 
-# User agents for anti-detection
+# User agents
 USER_AGENTS = [
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
@@ -466,6 +436,60 @@ USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0',
     'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
 ]
+
+# ===== Interactive helpers =====
+def prompt_int_with_bounds(prompt: str, *, min_val: int = None, max_val: int = None, default: int = None) -> int:
+    """Interactive integer prompt that enforces bounds via exceptions."""
+    while True:
+        try:
+            raw = input(f"{prompt}{' [' + str(default) + ']' if default is not None else ''}: ").strip()
+            if not raw:
+                if default is None:
+                    raise ConstraintError("A value is required.")
+                val = int(default)
+            else:
+                val = int(raw)  # raises ValueError for non-integers
+
+            if min_val is not None and val < min_val:
+                raise ConstraintError(f"Value must be ≥ {min_val}.")
+            if max_val is not None and val > max_val:
+                raise ConstraintError(f"Value must be ≤ {max_val}.")
+
+            return val
+        except ValueError:
+            print("❌ Please enter a whole number (integer). Try again.")
+        except ConstraintError as ce:
+            print(f"❌ {ce} Try again.")
+
+def prompt_location_or_blank(prompt: str, *, min_len: int = 3, default: str = "") -> str:
+    """
+    Interactive location prompt where:
+      - blank input = nationwide (no location constraint)
+      - otherwise must be at least `min_len` characters
+    """
+    while True:
+        raw = input(
+            f"\n{prompt}\n"
+            "   Examples: 'McLean', 'Virginia', 'San Francisco', 'McLean, VA, USA'\n"
+            "   (Press Enter to search nationwide / no location filter)\n"
+            f"   Location{(' [' + default + ']') if default else ''}: "
+        ).strip()
+
+        # Blank => nationwide (no location constraint)
+        if raw == "":
+            print("✅ Location left blank → Nationwide search (no location filter).")
+            return ""
+
+        # Otherwise enforce min length
+        if len(raw) >= min_len:
+            print(f"✅ Location set to: {raw}")
+            return raw
+
+        print(f"❌ Error: Location must be at least {min_len} characters "
+              f"or press Enter for nationwide. You entered: '{raw}' "
+              f"({len(raw)} characters)")
+
+
 
 class DiceCompleteScraper:
     def __init__(self, debug_mode=False, max_pages=1):
@@ -475,38 +499,28 @@ class DiceCompleteScraper:
         self.console_messages = []
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.debug_folder = f"debug_{self.timestamp}"
-
-        # Create debug folder if in debug mode
         if self.debug_mode:
             os.makedirs(self.debug_folder, exist_ok=True)
 
     def log(self, message, level="INFO"):
-        """Log message with timestamp"""
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        print(f"[{timestamp}] {level}: {message}")
+        ts = datetime.now().strftime("%H:%M:%S")
+        print(f"[{ts}] {level}: {message}")
 
     def take_screenshot(self, page, name):
-        """Take screenshot if debug mode is enabled"""
         if self.debug_mode:
             try:
-                # Save in debug folder with descriptive name
                 filename = os.path.join(self.debug_folder, f"{name}.png")
                 page.screenshot(path=filename, full_page=True)
                 self.log(f"📸 Screenshot saved: {filename}")
-
-                # Also save HTML for debugging
                 html_filename = os.path.join(self.debug_folder, f"{name}.html")
-                html_content = page.content()
-                with open(html_filename, 'w', encoding='utf-8') as f:
-                    f.write(html_content)
+                with open(html_filename, "w", encoding="utf-8") as f:
+                    f.write(page.content())
                 self.log(f"📄 HTML saved: {html_filename}")
             except Exception as e:
                 self.log(f"⚠️ Could not save screenshot/HTML: {e}")
 
     def setup_browser(self):
-        """Setup browser with anti-detection settings"""
         self.log("🚀 Setting up browser...")
-
         self.playwright = sync_playwright().start()
         self.browser = self.playwright.chromium.launch(
             headless=not self.debug_mode,
@@ -519,16 +533,12 @@ class DiceCompleteScraper:
                 '--disable-features=VizDisplayCompositor'
             ]
         )
-
         self.context = self.browser.new_context(
             user_agent=random.choice(USER_AGENTS),
             viewport={'width': 1920, 'height': 1080},
             ignore_https_errors=True
         )
-
         self.page = self.context.new_page()
-
-        # Setup console logging
         self.page.on("console", lambda msg: self.console_messages.append(f"[{msg.type}] {msg.text}"))
         if self.debug_mode:
             self.page.on("console", lambda msg: print(f"🌐 Browser: [{msg.type}] {msg.text}"))
@@ -545,29 +555,25 @@ class DiceCompleteScraper:
                     'secure': cookie.get('secure', False),
                     'sameSite': 'None' if cookie.get('sameSite') is None else cookie.get('sameSite')
                 }
-
                 if 'expirationDate' in cookie:
                     playwright_cookie['expires'] = cookie['expirationDate']
-
                 self.context.add_cookies([playwright_cookie])
             except Exception as e:
-                self.log(f"⚠️ Could not set cookie {cookie['name']}: {e}")
+                self.log(f"⚠️ Could not set cookie {cookie.get('name','?')}: {e}")
 
         self.log("✅ Browser setup complete")
         self.take_screenshot(self.page, "browser_setup")
 
     def apply_search_filters(self):
-        """Apply search filters using JavaScript (comprehensive version from dice-filters.py)"""
+        """Apply search filters using JavaScript (uses DISTANCE_MILES & LAST_ACTIVE_DAYS)."""
         self.log("🎯 Applying search filters...")
-
         filter_js = f'''
 (async () => {{
   const BOOLEAN = `{BOOLEAN}`;
   const LOCATION = `{LOCATION}`;
-  const DISTANCE_MILES = {DISTANCE_MILES};
+  const DISTANCE_MILES = {DISTANCE_MILES if DISTANCE_MILES is not None else 'null'};  // <-
   const LAST_ACTIVE_DAYS = {LAST_ACTIVE_DAYS};
 
-  // Track filter state
   const filterState = {{
     keywordApplied: false,
     locationApplied: false,
@@ -580,243 +586,152 @@ class DiceCompleteScraper:
     searchExecuted: false
   }};
 
-  // Helper functions
-  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-  const setVal = (el, v) => {{
-    el.value = v;
-    el.dispatchEvent(new Event('input', {{ bubbles: true }}));
-    el.dispatchEvent(new Event('change', {{ bubbles: true }}));
-  }};
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const setVal = (el, v) => {{ el.value = v; el.dispatchEvent(new Event('input', {{bubbles:true}})); el.dispatchEvent(new Event('change', {{bubbles:true}})); }};
   const clickIf = (el) => {{ if (el && !el.disabled) el.click(); }};
 
-  // Helper to open accordion panels
   const ensureOpen = async (toggleSel, panelSel) => {{
     const toggle = document.querySelector(toggleSel);
     const panel = document.querySelector(panelSel);
-    if (toggle && panel) {{
-      console.log('🔓 Checking panel:', panelSel);
-      if (panel.getAttribute('aria-hidden') === 'true') {{
-        clickIf(toggle);
-        await sleep(150);
-        console.log('✅ Panel opened');
-      }}
+    if (toggle && panel && panel.getAttribute('aria-hidden') === 'true') {{
+      clickIf(toggle);
+      await sleep(150);
     }}
   }};
 
   try {{
-    console.log('🚀 Starting comprehensive filter application...');
-
     // Step 0: Clear IntelliSearch
-    console.log('🔧 Step 0: Clearing IntelliSearch...');
     const intelli = document.querySelector('#dhi-typeahead-text-area-search-barjob-titlesInput');
-    if (intelli) {{
-      setVal(intelli, '');
-      console.log('✅ IntelliSearch cleared');
-    }}
+    if (intelli) {{ setVal(intelli, ''); }}
 
-    // Step 1: Set Boolean search
-    console.log('🔧 Step 1: Setting keyword search...');
+    // Step 1: Keyword / Boolean
     let kb = document.querySelector('#dhi-typeahead-text-area-keyword') ||
              document.querySelector('input[placeholder*="Keyword or Boolean"]') ||
              document.querySelector('textarea[placeholder*="Keyword or Boolean"]');
-
     if (!kb) {{
-      const alternativeSelectors = [
-        'input[placeholder*="keyword" i]',
-        'textarea[placeholder*="keyword" i]',
-        'input[aria-label*="keyword" i]',
-        'textarea[aria-label*="keyword" i]'
-      ];
-      for (const selector of alternativeSelectors) {{
-        kb = document.querySelector(selector);
-        if (kb) break;
+      for (const sel of ['input[placeholder*="keyword" i]','textarea[placeholder*="keyword" i]','input[aria-label*="keyword" i]','textarea[aria-label*="keyword" i]']) {{
+        kb = document.querySelector(sel); if (kb) break;
       }}
     }}
-
     if (kb) {{
       setVal(kb, '');
-      await sleep(100);
+      await sleep(80);
       setVal(kb, BOOLEAN);
-      await sleep(200);
-      filterState.keywordApplied = kb.value.includes('Appian') && kb.value.includes('SAIL');
-      console.log('✅ Boolean search applied, verified:', filterState.keywordApplied);
-    }} else {{
-      console.error('❌ Keyword field not found');
+      await sleep(150);
+      filterState.keywordApplied = !!kb.value;
     }}
 
-    // Step 2: Set Location
-    console.log('\\n🔧 Step 2: Setting location...');
+    // Step 2 + 3: Location (optional) and Distance (only if location provided)
     const loc = document.querySelector('#google-location-search');
-    if (loc) {{
-      setVal(loc, '');
-      await sleep(100);
-      setVal(loc, LOCATION);
-      await sleep(300);
-
-      const list = document.getElementById('talent-search-location-search-typeahead-list');
-      if (list) {{
-        const options = Array.from(list.querySelectorAll('[role="option"], li, a, div'));
-        const opt = options.find(x => (x.textContent || '').toLowerCase().includes(LOCATION.toLowerCase()));
-        if (opt) {{
-          clickIf(opt);
-          await sleep(200);
-          console.log('✅ Location selected from autocomplete');
+    
+    if (LOCATION && LOCATION.trim().length > 0) {{
+      // Apply location
+      if (loc) {{
+        setVal(loc, '');
+        await sleep(80);
+        setVal(loc, LOCATION);
+        await sleep(200);
+    
+        const list = document.getElementById('talent-search-location-search-typeahead-list');
+        if (list) {{
+          const opt = Array.from(list.querySelectorAll('[role="option"], li, a, div'))
+            .find(x => (x.textContent || '').toLowerCase().includes(LOCATION.toLowerCase()));
+          if (opt) {{ clickIf(opt); await sleep(120); }}
+        }}
+        filterState.locationApplied = !!loc.value;
+      }}
+    
+      // Distance ONLY when a location is set, and only if we actually have a number
+      if (DISTANCE_MILES !== null) {{
+        const distanceInputs = Array.from(document.querySelectorAll('input[type="number"], input[type="text"]'));
+        const distanceInput = distanceInputs.find(i => {{
+          const ctx = (i.closest('.float-label-container')?.previousElementSibling?.textContent || '')
+            + (i.getAttribute('title') || '')
+            + (i.getAttribute('aria-label') || '')
+            + (i.placeholder || '');
+          return /distance|miles/i.test(ctx);
+        }});
+        if (distanceInput) {{
+          setVal(distanceInput, String(DISTANCE_MILES));
+          await sleep(80);
+          filterState.distanceApplied = (distanceInput.value == String(DISTANCE_MILES));
         }}
       }}
-      filterState.locationApplied = loc.value.includes(LOCATION);
-      console.log('✅ Location set, verified:', filterState.locationApplied);
+    }} else {{
+      // Nationwide: clear any prefilled location & DO NOT apply distance
+      if (loc) {{ setVal(loc, ''); await sleep(80); }}
+      filterState.locationApplied = false;
+      filterState.distanceApplied = false;
+      console.log('🌍 Nationwide search: location & distance not applied.');
     }}
 
-    // Step 3: Set Distance
-    console.log('\\n🔧 Step 3: Setting distance...');
-    const distanceInputs = Array.from(document.querySelectorAll('input[type="number"], input[type="text"]'));
-    const distanceInput = distanceInputs.find(i => {{
-      const ctx = (i.closest('.float-label-container')?.previousElementSibling?.textContent || '') +
-                  (i.getAttribute('title') || '') +
-                  (i.getAttribute('aria-label') || '') +
-                  (i.placeholder || '');
-      return /distance|miles/i.test(ctx);
-    }});
 
-    if (distanceInput) {{
-      setVal(distanceInput, String(DISTANCE_MILES));
-      await sleep(100);
-      filterState.distanceApplied = distanceInput.value == String(DISTANCE_MILES);
-      console.log('✅ Distance set to', DISTANCE_MILES, 'miles, verified:', filterState.distanceApplied);
-    }}
 
-    // Step 4: Willing to Relocate
-    console.log('\\n🔧 Step 4: Setting willing to relocate...');
+    // Step 4: Willing to relocate (optional)
     const relocateBtn = document.querySelector('#searchBarWillingToRelocatePopoverToggle');
     if (relocateBtn) {{
       const wasExpanded = relocateBtn.getAttribute('aria-expanded') === 'true';
-      if (!wasExpanded) {{
-        clickIf(relocateBtn);
-        await sleep(300);
-      }}
-
+      if (!wasExpanded) {{ clickIf(relocateBtn); await sleep(200); }}
       const relocateAnywhere = document.querySelector('#willingtorelocate-facet-option-willing-to-relocate');
-      if (relocateAnywhere && !relocateAnywhere.checked) {{
-        clickIf(relocateAnywhere);
-        await sleep(150);
-        console.log('✅ Willing to relocate checked');
-      }}
-
-      // Include locals checkbox
-      const includeLocals = document.querySelector('.popover-content input[data-cy="exclude-locals-checkbox"]') ||
-                           document.querySelector('.popover-content #excludeLocals') ||
-                           document.querySelector('.popover-content input[aria-label*="Include Candidates Living"]');
-      if (includeLocals && !includeLocals.disabled && !includeLocals.checked) {{
-        clickIf(includeLocals);
-        await sleep(150);
-        console.log('✅ Include locals checked');
-      }}
-
-      if (!wasExpanded) {{
-        clickIf(relocateBtn);
-        await sleep(150);
-      }}
+      if (relocateAnywhere && !relocateAnywhere.checked) {{ clickIf(relocateAnywhere); await sleep(120); }}
+      if (!wasExpanded) {{ clickIf(relocateBtn); await sleep(100); }}
       filterState.relocateApplied = relocateAnywhere ? relocateAnywhere.checked : false;
-      console.log('✅ Willing to relocate configured, verified:', filterState.relocateApplied);
     }}
 
-    // Step 5: Last Active Days
-    console.log('\\n🔧 Step 5: Setting last active days...');
+    // Step 5: Last active (days)
     await ensureOpen('#filter-accordion-date-updated-toggle', '#filter-accordion-date-updated-panel');
     const lastActiveInput = document.querySelector('#filterLastActiveOnBrand');
     if (lastActiveInput) {{
       setVal(lastActiveInput, String(LAST_ACTIVE_DAYS));
+      await sleep(80);
       filterState.lastActiveApplied = lastActiveInput.value == String(LAST_ACTIVE_DAYS);
-      console.log('✅ Last active days set to', LAST_ACTIVE_DAYS, 'verified:', filterState.lastActiveApplied);
     }}
 
-    // Step 6: Profile Source - Any
-    console.log('\\n🔧 Step 6: Setting profile source...');
+    // Step 6: Profile source Any
     const profileAny = document.querySelector('#profilesources-facet-option-0');
-    if (profileAny && !profileAny.checked) {{
-      profileAny.click();
-      await sleep(100);
-      console.log('✅ Profile source set to Any');
-    }}
+    if (profileAny && !profileAny.checked) {{ profileAny.click(); await sleep(80); }}
     filterState.profileSourceApplied = profileAny ? profileAny.checked : false;
 
-    // Step 7: Uncheck Contact Methods
-    console.log('\\n🔧 Step 7: Unchecking contact methods...');
+    // Step 7: Uncheck contact methods
     await ensureOpen('#filter-accordion-contact-methods-toggle', '#filter-accordion-contact-methods-panel');
     const contactPanel = document.querySelector('#filter-accordion-contact-methods-panel');
     if (contactPanel) {{
-      const boxes = contactPanel.querySelectorAll('input[type="checkbox"]');
-      boxes.forEach((cb, i) => {{
-        if (cb.checked || cb.getAttribute('aria-checked') === 'true') {{
-          cb.click();
-          console.log('✅ Unchecked contact method', i+1);
-        }}
-      }});
+      contactPanel.querySelectorAll('input[type="checkbox"]').forEach(cb => {{ if (cb.checked || cb.getAttribute('aria-checked')==='true') cb.click(); }});
       filterState.contactMethodsCleared = true;
     }}
 
-    // Step 8: Uncheck Additional Filters
-    console.log('\\n🔧 Step 8: Unchecking additional filters...');
+    // Step 8: Uncheck additional filters
     await ensureOpen('#filter-accordion-additional-filters-toggle', '#filter-accordion-additional-filters-panel');
     const addlPanel = document.querySelector('#filter-accordion-additional-filters-panel');
     if (addlPanel) {{
-      const boxes = addlPanel.querySelectorAll('input[type="checkbox"]');
-      boxes.forEach((cb, i) => {{
-        if (cb.checked || cb.getAttribute('aria-checked') === 'true') {{
-          cb.click();
-          console.log('✅ Unchecked additional filter', i+1);
-        }}
-      }});
+      addlPanel.querySelectorAll('input[type="checkbox"]').forEach(cb => {{ if (cb.checked || cb.getAttribute('aria-checked')==='true') cb.click(); }});
       filterState.additionalFiltersCleared = true;
     }}
 
-    // Step 9: Execute Search
-    console.log('\\n🔧 Step 9: Executing search...');
+    // Step 9: Execute search
     const searchBtn = document.getElementById('searchButton') || document.querySelector('#searchButton');
-    if (searchBtn) {{
-      const isVisible = searchBtn.offsetParent !== null;
-      const isEnabled = !searchBtn.disabled;
-      if (isVisible && isEnabled) {{
-        filterState.searchExecuted = true;
-        searchBtn.click();
-        console.log('✅ Search executed successfully');
-      }} else {{
-        console.log('❌ Search button not clickable');
-      }}
-    }} else {{
-      console.log('❌ Search button not found');
-    }}
-
-    // Final verification
-    console.log('\\n📊 === FILTER VERIFICATION ===');
-    console.log('Filter state:', filterState);
-    const successCount = Object.values(filterState).filter(Boolean).length;
-    const totalFilters = Object.keys(filterState).length;
-    console.log('✅', successCount, '/', totalFilters, 'filters applied successfully');
+    if (searchBtn && !searchBtn.disabled && searchBtn.offsetParent !== null) {{ filterState.searchExecuted = true; searchBtn.click(); }}
 
     return filterState;
-
-  }} catch (error) {{
-    console.error('❌ Error in filter application:', error);
-    throw error;
+  }} catch (e) {{
+    console.error('Filter error:', e);
+    throw e;
   }}
 }})();
 '''
-
         try:
             result = self.page.evaluate(filter_js)
             self.log(f"✅ Filters applied successfully")
             self.log(f"📊 Filter verification: {result}")
             self.take_screenshot(self.page, "filters_applied")
             return True
-
         except Exception as e:
             self.log(f"❌ Error applying filters: {e}")
             self.take_screenshot(self.page, "filter_error")
             return False
 
     def extract_candidate_data(self):
-        """Extract candidate data from current page (comprehensive version from dice_web_scrap.py)"""
+        """Extract candidate data from current page (comprehensive)."""
         self.log("📊 Extracting candidate data...")
 
         extract_js = r"""
@@ -827,11 +742,7 @@ class DiceCompleteScraper:
 
             const candidates = [];
 
-            // Debug function to analyze page structure
             const debugPageStructure = () => {
-                console.log('🔍 === Page Structure Debug ===');
-
-                // Check for various candidate card selectors
                 const selectors = [
                     '[data-cy="profile-name-text"]',
                     '.profile-name-text',
@@ -842,169 +753,92 @@ class DiceCompleteScraper:
                     '[data-cy*="profile"]',
                     '[data-cy*="candidate"]'
                 ];
-
                 selectors.forEach(selector => {
                     const elements = document.querySelectorAll(selector);
                     if (elements.length > 0) {
                         console.log(`✅ Found ${elements.length} elements with selector: ${selector}`);
                     }
                 });
-
-                // Look for any links to profiles
                 const profileLinks = document.querySelectorAll('a[href*="/employer/talent/profile/"]');
                 console.log(`🔗 Found ${profileLinks.length} profile links`);
-
-                return {
-                    profileLinks: profileLinks.length
-                };
+                return { profileLinks: profileLinks.length };
             };
 
-            // Debug page structure first
-            const pageDebug = debugPageStructure();
+            debugPageStructure();
 
-            // Find all candidate cards/profiles with multiple selector strategies
-            let candidateCards = [];
-
-            // Strategy 1: Original selector
-            candidateCards = Array.from(document.querySelectorAll('[data-cy="profile-name-text"], .profile-name-text'));
-            console.log(`🎯 Strategy 1 - Found ${candidateCards.length} candidate name elements`);
-
-            // Strategy 2: Find cards containing profile links
+            // Candidate "cards" to iterate
+            let candidateCards = Array.from(document.querySelectorAll('[data-cy="profile-name-text"], .profile-name-text'));
             if (candidateCards.length === 0) {
                 const profileLinks = document.querySelectorAll('a[href*="/employer/talent/profile/"]');
                 candidateCards = Array.from(profileLinks).map(link => {
                     const card = link.closest('div, card, article, section');
                     return card ? card.querySelector('h1, h2, h3, h4, [class*="name"], [data-cy*="name"]') : link;
-                }).filter(el => el);
-                console.log(`🎯 Strategy 2 - Found ${candidateCards.length} candidate elements via profile links`);
+                }).filter(Boolean);
             }
-
-            // Strategy 3: Find any elements with profile-related classes
             if (candidateCards.length === 0) {
                 candidateCards = Array.from(document.querySelectorAll('[class*="profile"], [class*="candidate"], [class*="result"]'))
                     .map(card => card.querySelector('h1, h2, h3, h4, [class*="name"], [data-cy*="name"]'))
-                    .filter(el => el);
-                console.log(`🎯 Strategy 3 - Found ${candidateCards.length} candidate elements via profile classes`);
+                    .filter(Boolean);
             }
-
             console.log(`🎯 Final candidate elements found: ${candidateCards.length}`);
 
             candidateCards.forEach((nameElement, index) => {
                 try {
-                    console.log(`👤 Processing candidate ${index + 1}...`);
-
-                    // Get the candidate card container - search up the DOM tree more aggressively
-                    // The nameElement is the h3 with profile-name-text
-                    // We need to go up to find the full card that contains all the data
                     let card = null;
 
-                    // Strategy 1: Go up parent chain until we find an element with the data we need
+                    // climb up to find a container with other fields
                     let parent = nameElement.parentElement;
                     for (let i = 0; i < 10 && parent; i++) {
-                        // Look for an element that has both the name and other data fields
                         if (parent.querySelector('[data-cy="location"]') &&
                             parent.querySelector('[data-cy="pref-prev-job-title"]')) {
                             card = parent;
-                            console.log(`✅ Found card via parent search at level ${i}`);
                             break;
                         }
                         parent = parent.parentElement;
                     }
+                    if (!card) { card = nameElement.closest('card, .card, [class*="candidate-card"]'); }
 
-                    // Strategy 2: If not found, try to find by common card class patterns
                     if (!card) {
-                        card = nameElement.closest('card, .card, [class*="candidate-card"]');
-                    }
-
-                    // Strategy 3: Use document-wide search for the card containing this name
-                    if (!card) {
-                        console.log(`⚠️ Using fallback: searching whole document`);
-                        // Get all cards and find the one containing this name text
                         const allCards = document.querySelectorAll('[class*="card"], article, section');
                         for (const potentialCard of allCards) {
-                            if (potentialCard.textContent.includes(nameElement.textContent.trim())) {
+                            if ((potentialCard.textContent || '').includes((nameElement.textContent || '').trim())) {
                                 if (potentialCard.querySelector('[data-cy="location"]')) {
                                     card = potentialCard;
-                                    console.log(`✅ Found card via document-wide search`);
                                     break;
                                 }
                             }
                         }
                     }
-
-                    // Last resort: use the name element's parent
-                    if (!card) {
-                        console.log(`⚠️ Could not find card container for candidate ${index + 1}, using parent`);
-                        card = nameElement.parentElement?.parentElement || nameElement;
-                    }
-
-                    console.log(`📦 Card container: tag=${card.tagName}, id=${card.id || 'none'}, classes=${card.className.substring(0, 80)}`);
+                    if (!card) { card = nameElement.parentElement?.parentElement || nameElement; }
 
                     const candidate = {};
-
-                    // Helper function to find element with multiple selectors
                     const findElement = (selectors) => {
                         for (const selector of selectors) {
-                            const element = card.querySelector(selector);
-                            if (element && element.textContent.trim()) {
-                                return element;
-                            }
+                            const el = card.querySelector(selector);
+                            if (el && (el.textContent || '').trim()) return el;
                         }
                         return null;
                     };
 
-                    // 0. Profile Name - try to get from the nameElement first
-                    let candidateName = nameElement.textContent.trim();
-
-                    // If nameElement doesn't have text, search within card
+                    // Name
+                    let candidateName = (nameElement.textContent || '').trim();
                     if (!candidateName || candidateName.length < 2) {
-                        const nameElement_final = card.querySelector('[data-cy="profile-name-text"], .profile-name-text, h1, h2, h3, h4');
-                        candidateName = nameElement_final ? nameElement_final.textContent.trim() : '';
+                        const nameEl = card.querySelector('[data-cy="profile-name-text"], .profile-name-text, h1, h2, h3, h4');
+                        candidateName = nameEl ? nameEl.textContent.trim() : '';
                     }
-
                     candidate['profile-name-text'] = candidateName;
+                    if (!candidate['profile-name-text']) return;
 
-                    if (candidate['profile-name-text']) {
-                        console.log(`✅ Candidate ${index + 1} name: ${candidate['profile-name-text']}`);
-                    } else {
-                        console.log(`⚠️ Candidate ${index + 1}: No name found, skipping`);
-                        console.log(`   NameElement text: "${nameElement.textContent.substring(0, 50)}"`);
-                        console.log(`   NameElement tag: ${nameElement.tagName}`);
-                        return; // Skip if no name found
-                    }
-
-                    // 0.1. Profile URL and Viewed Status
-                    // Find the profile link - it's usually the parent of the nameElement or nearby
-                    let linkElement = null;
-
-                    // Strategy 1: Check if nameElement is inside a link
-                    linkElement = nameElement.closest('a[href*="/employer/talent/profile/"]');
-
-                    // Strategy 2: Look for link in the card
-                    if (!linkElement) {
-                        linkElement = card.querySelector('a[href*="/employer/talent/profile/"]');
-                    }
-
+                    // Profile URL
+                    const linkElement = card.querySelector('a[href*="/employer/talent/profile/"]');
                     if (linkElement) {
-                        const href = linkElement.getAttribute('href');
-                        candidate['profile-url'] = href.startsWith('http') ? href : `https://www.dice.com${href}`;
-
-                        // Check if profile has been viewed (has 'viewed' class)
-                        const hasViewedClass = linkElement.classList.contains('viewed');
-                        candidate['profile-viewed'] = hasViewedClass ? 'Yes' : 'No';
-
-                        // Debug: Show all classes on the link
-                        const allClasses = Array.from(linkElement.classList).join(', ');
-                        console.log(`🔗 Profile URL: ${candidate['profile-url']}`);
-                        console.log(`👁️ Link classes: ${allClasses}`);
-                        console.log(`👁️ Profile Viewed: ${candidate['profile-viewed']}`);
+                        const href = linkElement.getAttribute('href') || '';
+                        candidate['profile-url'] = href.startsWith('http') ? href : (href ? `https://www.dice.com${href}` : '');
                     } else {
                         candidate['profile-url'] = '';
-                        candidate['profile-viewed'] = 'Unknown';
-                        console.log(`⚠️ No profile link found`);
                     }
 
-                    // 1. Preferred Job Title
+                    // Preferred Job Title
                     const jobTitleElement = findElement([
                         '[data-cy="pref-prev-job-title"]',
                         '.preferred-position',
@@ -1014,7 +848,7 @@ class DiceCompleteScraper:
                     ]);
                     candidate['pref-prev-job-title'] = jobTitleElement ? jobTitleElement.textContent.trim() : '';
 
-                    // 2. Location
+                    // Location
                     const locationElement = findElement([
                         '[data-cy="location"]',
                         '.location-name',
@@ -1023,7 +857,7 @@ class DiceCompleteScraper:
                     ]);
                     candidate['location'] = locationElement ? locationElement.textContent.trim() : '';
 
-                    // 3. Work Experience
+                    // Work Experience
                     const workExpElement = findElement([
                         '[data-cy="work-exp"]',
                         '.total-work-exp',
@@ -1032,7 +866,7 @@ class DiceCompleteScraper:
                     ]);
                     candidate['work-exp'] = workExpElement ? workExpElement.textContent.trim() : '';
 
-                    // 4. Work Permit
+                    // Work Permit
                     const workPermitElement = findElement([
                         '[data-cy="work-permit"]',
                         '.work-permits',
@@ -1041,7 +875,7 @@ class DiceCompleteScraper:
                     ]);
                     candidate['work-permit'] = workPermitElement ? workPermitElement.textContent.trim() : '';
 
-                    // 5. Willing to Relocate
+                    // Willing to Relocate
                     const relocateElement = findElement([
                         '[data-cy="willing-to-relocate"]',
                         '.willing-to-relocate',
@@ -1049,7 +883,7 @@ class DiceCompleteScraper:
                     ]);
                     candidate['willing-to-relocate'] = relocateElement ? relocateElement.textContent.trim() : '';
 
-                    // 6. Compensation
+                    // Compensation
                     const compensationElement = findElement([
                         '[data-cy="compensation"]',
                         '.salary-info',
@@ -1058,7 +892,7 @@ class DiceCompleteScraper:
                     ]);
                     candidate['compensation'] = compensationElement ? compensationElement.textContent.trim() : '';
 
-                    // 7. Desired Work Setting
+                    // Desired Work Setting
                     const workSettingElement = findElement([
                         '[data-cy="desired-work-setting"]',
                         '.desired-work-setting',
@@ -1067,7 +901,7 @@ class DiceCompleteScraper:
                     ]);
                     candidate['desired-work-setting'] = workSettingElement ? workSettingElement.textContent.trim() : '';
 
-                    // 8. Date Updated
+                    // Date Updated
                     const dateUpdatedElement = findElement([
                         '[data-cy="date-updated"]',
                         '.last-updated',
@@ -1075,7 +909,7 @@ class DiceCompleteScraper:
                     ]);
                     candidate['date-updated'] = dateUpdatedElement ? dateUpdatedElement.textContent.trim() : '';
 
-                    // 9. Date Last Active
+                    // Date Last Active
                     const dateLastActiveElement = findElement([
                         '[data-cy="date-last-active"]',
                         '.last-active-on-brand',
@@ -1083,7 +917,7 @@ class DiceCompleteScraper:
                     ]);
                     candidate['date-last-active'] = dateLastActiveElement ? dateLastActiveElement.textContent.trim() : '';
 
-                    // 10. Likely to Switch
+                    // Likely to Switch
                     const likelyToSwitchElement = findElement([
                         '[data-cy="likely-to-switch-text"]',
                         '.likely-to-switch-text',
@@ -1092,40 +926,25 @@ class DiceCompleteScraper:
                     ]);
                     candidate['likely-to-switch'] = likelyToSwitchElement ? likelyToSwitchElement.textContent.trim() : '';
 
-                    // Add metadata
+                    // Metadata
                     candidate['scraped-date'] = new Date().toISOString();
                     candidate['page-number'] = typeof window.currentPageNumber !== 'undefined' ? window.currentPageNumber : 1;
 
-                    // Log what we found for this candidate
-                    const filledFields = Object.entries(candidate).filter(([key, value]) => {
-                        if (!value) return false;
-                        if (typeof value === 'string') return value.trim().length > 0;
-                        return true; // Non-string values (like numbers) count as filled
+                    const filledFields = Object.entries(candidate).filter(([k,v]) => {
+                        if (!v) return false;
+                        if (typeof v === 'string') return v.trim().length > 0;
+                        return true;
                     }).length;
-                    console.log(`📊 Candidate ${index + 1}: ${filledFields}/15 fields filled`);
 
-                    if (filledFields >= 2) { // At least name + one other field
+                    if (filledFields >= 2) {
                         candidates.push(candidate);
-                        console.log(`✅ Added candidate: ${candidate['profile-name-text']}`);
-                    } else {
-                        console.log(`⚠️ Candidate ${index + 1} skipped: insufficient data (only ${filledFields} fields)`);
                     }
-
                 } catch (error) {
                     console.error(`❌ Error processing candidate ${index + 1}:`, error);
                 }
             });
 
             console.log(`✅ Successfully extracted ${candidates.length} candidates with complete data`);
-
-            // Log summary of found data
-            if (candidates.length > 0) {
-                console.log('📋 === Extraction Summary ===');
-                candidates.forEach((candidate, i) => {
-                    console.log(`Candidate ${i+1}: ${candidate['profile-name-text']} | ${candidate['location']} | ${candidate['pref-prev-job-title']}`);
-                });
-            }
-
             return candidates;
         }
         """
@@ -1133,234 +952,118 @@ class DiceCompleteScraper:
         try:
             candidates = self.page.evaluate(extract_js)
             self.log(f"✅ Extracted {len(candidates)} candidates from current page")
-
-            # Show sample of extracted data
-            if candidates and len(candidates) > 0:
-                self.log(f"📋 Sample candidates:")
-                for i, candidate in enumerate(candidates[:3], 1):
-                    self.log(f"   {i}. {candidate.get('profile-name-text', 'N/A')} - {candidate.get('location', 'N/A')} - {candidate.get('pref-prev-job-title', 'N/A')}")
-
+            for i, c in enumerate(candidates[:3], 1):
+                self.log(f"   {i}. {c.get('profile-name-text','N/A')} – {c.get('location','N/A')} – {c.get('pref-prev-job-title','N/A')}")
             return candidates
         except Exception as e:
             self.log(f"❌ Error extracting data: {e}")
             return []
 
     def navigate_and_verify(self):
-        """Navigate to search page and verify"""
         self.log("🌐 Navigating to Dice talent search...")
-
         search_url = 'https://www.dice.com/employer/talent/search/'
-        max_attempts = 3
-
-        for attempt in range(max_attempts):
+        for attempt in range(3):
             try:
-                self.log(f"🔄 Navigation attempt {attempt + 1}/{max_attempts}")
-
+                self.log(f"🔄 Navigation attempt {attempt + 1}/3")
                 self.page.goto(search_url, wait_until='domcontentloaded', timeout=30000)
                 self.page.wait_for_load_state('networkidle', timeout=10000)
-
-                current_url = self.page.url
-                page_title = self.page.title()
-
-                self.log(f"📍 URL: {current_url}")
-                self.log(f"📄 Title: {page_title}")
-
-                if 'talent/search' in current_url.lower():
+                if 'talent/search' in self.page.url.lower():
                     self.log("✅ Successfully navigated to search page")
                     self.take_screenshot(self.page, "search_page_loaded")
-
-                    # Wait for dynamic content
                     time.sleep(3)
                     return True
-                else:
-                    self.log("⚠️ Not on search page, retrying...")
-                    if attempt < max_attempts - 1:
-                        time.sleep(2)
-                        continue
-
+                self.log("⚠️ Not on search page, retrying...")
             except Exception as e:
                 self.log(f"⚠️ Navigation attempt {attempt + 1} failed: {e}")
-                if attempt < max_attempts - 1:
-                    time.sleep(2)
-                    continue
-
+            time.sleep(2)
         self.log("❌ Failed to navigate to search page")
         return False
 
     def scrape_multiple_pages(self):
-        """Scrape multiple pages of results"""
         self.log(f"📄 Starting to scrape {self.max_pages} pages...")
-
         for page_num in range(1, self.max_pages + 1):
             self.log(f"\n📄 Processing page {page_num}/{self.max_pages}")
-
-            # Wait for results to load
             time.sleep(3)
-
-            # Update page number for tracking
             self.page.evaluate("window.currentPageNumber = " + str(page_num))
-
-            # Extract data from current page
             candidates = self.extract_candidate_data()
             self.all_candidates.extend(candidates)
-
-            if candidates:
-                self.log(f"✅ Found {len(candidates)} candidates on page {page_num}")
-
-                # Show sample
-                for i, candidate in enumerate(candidates[:3], 1):
-                    name = candidate.get('profile-name-text', 'N/A')
-                    location = candidate.get('location', 'N/A')
-                    title = candidate.get('pref-prev-job-title', 'N/A')
-                    self.log(f"   {i}. {name} - {location} - {title}")
-            else:
-                self.log("❌ No candidates found on this page")
-
-            # Take screenshot
             self.take_screenshot(self.page, f"page_{page_num}_results")
-
-            # Navigate to next page if not the last page
             if page_num < self.max_pages:
                 try:
                     next_button = self.page.query_selector('button[aria-label*="next"], a[aria-label*="next"], .pagination-next')
-                    if next_button:
-                        is_disabled = next_button.is_disabled()
-                        if not is_disabled:
-                            self.log("➡️ Navigating to next page...")
-                            next_button.click()
-                            self.page.wait_for_load_state('domcontentloaded', timeout=15000)
-                            time.sleep(2)
-                        else:
-                            self.log("🏁 Next page button is disabled, ending scraping")
-                            break
+                    if next_button and not next_button.is_disabled():
+                        self.log("➡️ Navigating to next page...")
+                        next_button.click()
+                        self.page.wait_for_load_state('domcontentloaded', timeout=15000)
+                        time.sleep(2)
                     else:
-                        self.log("🏁 No next page button found, ending scraping")
+                        self.log("🏁 No next page available; stopping.")
                         break
                 except Exception as e:
                     self.log(f"⚠️ Error navigating to next page: {e}")
                     break
 
     def save_to_excel(self):
-        """Save candidate data to Excel file"""
         if not self.all_candidates:
             self.log("❌ No candidates to save")
             return
-
-        # Define columns and order (matching the extraction field names)
         columns = [
-            'profile-name-text',
-            'profile-url',
-            'profile-viewed',
-            'pref-prev-job-title',
-            'location',
-            'work-exp',
-            'work-permit',
-            'willing-to-relocate',
-            'compensation',
-            'desired-work-setting',
-            'date-updated',
-            'date-last-active',
-            'likely-to-switch',
-            'scraped-date',
-            'page-number'
+            'profile-name-text','profile-url','pref-prev-job-title','location','work-exp','work-permit',
+            'willing-to-relocate','compensation','desired-work-setting','date-updated','date-last-active',
+            'likely-to-switch','scraped-date','page-number'
         ]
-
-        # Create DataFrame
         df = pd.DataFrame(self.all_candidates)
-
-        # Reorder columns according to defined order
         df = df.reindex(columns=columns, fill_value='')
-
-        # Use the same timestamp as the debug folder
         filename = f"dice_candidates_{self.timestamp}.xlsx"
-
         try:
             df.to_excel(filename, index=False, engine='openpyxl')
             self.log(f"✅ Data saved to {filename}")
-            self.log(f"📊 Total records: {len(df)}")
-            self.log(f"📝 Columns: {', '.join(df.columns)}")
-
-            # Show sample data
-            self.log("\n📋 Sample data:")
-            for i, row in df.head(3).iterrows():
-                name = row.get('profile-name-text', 'N/A')
-                location = row.get('location', 'N/A')
-                title = row.get('pref-prev-job-title', 'N/A')
-                self.log(f"   {i+1}. {name} - {location} - {title}")
-
         except Exception as e:
             self.log(f"❌ Error saving to Excel: {e}")
-            # Fallback to CSV
-            csv_filename = filename.replace('.xlsx', '.csv')
-            try:
-                df.to_csv(csv_filename, index=False)
-                self.log(f"✅ Data saved to CSV instead: {csv_filename}")
-            except Exception as csv_error:
-                self.log(f"❌ Error saving to CSV: {csv_error}")
+            df.to_csv(filename.replace('.xlsx', '.csv'), index=False)
+            self.log(f"✅ Saved CSV fallback.")
 
     def run_complete_process(self):
-        """Run the complete process from login to data extraction"""
         start_time = time.time()
-
         self.log("🎲 === Complete Dice Scraper Process ===")
         self.log(f"🔍 Boolean Search: {BOOLEAN[:50]}...")
-        self.log(f"📍 Location: {LOCATION}")
-        self.log(f"📏 Distance: {DISTANCE_MILES} miles")
+        self.log(f"📍 Location: {LOCATION or 'Nationwide (no filter)'}")
+
+        if LOCATION and DISTANCE_MILES is not None:
+            self.log(f"📏 Distance: {DISTANCE_MILES} miles")
+        elif LOCATION:
+            self.log("📏 Distance: (not provided)")
+        else:
+            self.log("📏 Distance: (not applied — nationwide)")
+
         self.log(f"📅 Last Active: {LAST_ACTIVE_DAYS} days")
         self.log(f"📄 Pages to scrape: {self.max_pages}")
         self.log(f"🔍 Debug Mode: {'ON' if self.debug_mode else 'OFF'}")
 
         try:
-            # Step 1: Setup browser and login
             self.setup_browser()
-
-            # Step 2: Navigate to search page
             if not self.navigate_and_verify():
                 raise Exception("Failed to navigate to search page")
-
-            # Step 3: Apply search filters
             self.log("\n🎯 Step 1: Applying search filters...")
             if not self.apply_search_filters():
                 raise Exception("Failed to apply search filters")
-
-            # Wait for search results
             self.log("⏳ Waiting for search results...")
             time.sleep(5)
-
-            # Step 4: Extract candidate data
             self.log("\n📊 Step 2: Extracting candidate data...")
             self.scrape_multiple_pages()
-
-            # Step 5: Save results
             self.log("\n💾 Step 3: Saving results...")
             self.save_to_excel()
-
-            # Final summary
-            end_time = time.time()
-            duration = end_time - start_time
-
-            self.log(f"\n🎉 === PROCESS COMPLETED SUCCESSFULLY ===")
-            self.log(f"⏱️ Total duration: {duration:.2f} seconds")
-            self.log(f"👥 Total candidates extracted: {len(self.all_candidates)}")
-            self.log(f"📄 Pages processed: {min(self.max_pages, len(set(c.get('page_number', 1) for c in self.all_candidates)))}")
-
-            if self.debug_mode:
-                self.log(f"\n📋 Console Messages Summary:")
-                error_count = len([msg for msg in self.console_messages if '[error]' in msg.lower()])
-                warning_count = len([msg for msg in self.console_messages if '[warning]' in msg.lower()])
-                self.log(f"   Errors: {error_count}, Warnings: {warning_count}")
-                self.log(f"   📁 Debug files saved in: {self.debug_folder}/")
-                self.log(f"   💡 You can delete this folder later: rm -rf {self.debug_folder}")
-
+            duration = time.time() - start_time
+            self.log(f"\n🎉 COMPLETED in {duration:.2f}s. Candidates: {len(self.all_candidates)}")
             return True
-
         except Exception as e:
             self.log(f"❌ Process failed: {e}")
-            self.take_screenshot(self.page, "error_screenshot")
+            try:
+                self.take_screenshot(self.page, "error_screenshot")
+            except:
+                pass
             return False
-
         finally:
-            # Cleanup
             try:
                 self.browser.close()
                 self.playwright.stop()
@@ -1369,72 +1072,58 @@ class DiceCompleteScraper:
                 pass
 
 def main():
-    """Main function with command line arguments"""
     import argparse
-
     parser = argparse.ArgumentParser(description='Complete Dice Talent Search and Scraping')
     parser.add_argument('--debug', action='store_true', help='Run in visible browser mode for debugging')
     parser.add_argument('--pages', type=int, default=1, help='Number of pages to scrape (default: 1, max: 10)')
-
     args = parser.parse_args()
-
-    # Check if help was requested (argparse handles -h automatically)
-    if len(sys.argv) == 1:
-        print("""
-🎲 Complete Dice Talent Search and Scraping Script
-
-This script handles the entire process:
-1. 🔐 Login with saved cookies
-2. 🎯 Apply search filters (Appian + SAIL, McLean VA, etc.)
-3. 📊 Extract candidate data from search results
-4. 💾 Save to Excel file with timestamp
-
-Usage:
-  python dice_complete.py                    # Headless mode, 1 page
-  python dice_complete.py --debug           # Visible browser for debugging
-  python dice_complete.py --pages 5        # Scrape 5 pages
-  python dice_complete.py --debug --pages 3  # Debug mode, 3 pages
-
-Search Configuration:
-• Keywords: Appian OR "Appian Developer" OR "Appian Engineer" (with SAIL, BPM, etc.)
-• Location: McLean, VA, USA
-• Distance: 50 miles
-• Last Active: 20 days
-
-Output:
-• Excel file: dice_candidates_YYYYMMDD_HHMMSS.xlsx
-• Screenshots (debug mode): dice_*.png
-
-Data Fields Extracted:
-• Name, Title, Location, Experience, Work Permit
-• Relocation preference, Compensation, Remote work preference
-• Last updated, Last active, Likely to switch
-• Profile URL, Scraped date, Page number
-
-Examples:
-  python dice_complete.py --debug --pages 3    # Debug mode, scrape 3 pages
-  python dice_complete.py --pages 5           # Headless mode, scrape 5 pages
-        """)
-        return
-
-    # Validate arguments
     max_pages = max(1, min(args.pages, 10))
 
-    print(f"🎲 === Complete Dice Scraper ===")
-    print(f"🔍 Debug Mode: {'ON' if args.debug else 'OFF'}")
+    # 🔹 Location (blank = nationwide / no location filter)
+    global LOCATION
+    LOCATION = prompt_location_or_blank(
+        "📍 Enter location (city, state, or full address - min 3 chars, or press Enter for nationwide):",
+        min_len=3,
+        default=""
+    )
+
+    # 🔹 Distance: ONLY prompt if a location was provided
+    if LOCATION:
+        distance_input = prompt_int_with_bounds(
+            f"Enter distance in miles ({MIN_DISTANCE}-{MAX_DISTANCE})",
+            min_val=MIN_DISTANCE, max_val=MAX_DISTANCE, default=50
+        )
+    else:
+        distance_input = None  # nationwide → no distance filter
+
+    # 🔹 Last active: always required
+    last_active_input = prompt_int_with_bounds(
+        f"Enter last-active days (1-{MAX_LAST_ACTIVE_DAYS})",
+        min_val=1, max_val=MAX_LAST_ACTIVE_DAYS, default=7
+    )
+
+    global DISTANCE_MILES, LAST_ACTIVE_DAYS
+    DISTANCE_MILES = distance_input
+    LAST_ACTIVE_DAYS = last_active_input
+
+    print("🎲 === Complete Dice Scraper ===")
+    if LOCATION:
+        print(f"📍 Location: {LOCATION}")
+        print(f"📏 Distance: {DISTANCE_MILES} miles")
+    else:
+        print("📍 Location: Nationwide (no filter)")
+    print(f"📅 Last Active: {LAST_ACTIVE_DAYS} days")
     print(f"📄 Pages to scrape: {max_pages}")
+    print(f"🔍 Debug Mode: {'ON' if args.debug else 'OFF'}")
     print(f"⏰ Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 50)
 
-    # Create and run scraper
     scraper = DiceCompleteScraper(debug_mode=args.debug, max_pages=max_pages)
     success = scraper.run_complete_process()
-
     if success:
-        print(f"\n🎉 Success! Check the Excel files for candidate data.")
+        print("\n🎉 Success! Check the Excel file(s) for candidate data.")
     else:
-        print(f"\n❌ Process failed. Check the output above for details.")
-        print(f"💡 Try running with --debug flag to see what's happening.")
+        print("\n❌ Process failed. Run with --debug to inspect the UI and logs.")
 
 if __name__ == "__main__":
     main()
