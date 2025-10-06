@@ -681,6 +681,7 @@ class DiceCompleteScraper:
         self.debug_mode = debug_mode
         self.max_pages = max_pages
         self.all_candidates = []
+        self.seen_profile_ids = set()  # Track unique profile IDs to avoid duplicates
         self.console_messages = []
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.debug_folder = f"debug_{self.timestamp}"
@@ -1208,6 +1209,10 @@ class DiceCompleteScraper:
                         const href = linkElement.getAttribute('href');
                         candidate['profile-url'] = href.startsWith('http') ? href : `https://www.dice.com${href}`;
 
+                        // Extract profile ID from URL (e.g., /employer/talent/profile/12345)
+                        const profileIdMatch = href.match(/\/profile\/([^\/\?]+)/);
+                        candidate['candidate_profile_id'] = profileIdMatch ? profileIdMatch[1] : '';
+
                         // Check if profile has been viewed (has 'viewed' class)
                         const hasViewedClass = linkElement.classList.contains('viewed');
                         candidate['profile-viewed'] = hasViewedClass ? 'Yes' : 'No';
@@ -1215,10 +1220,12 @@ class DiceCompleteScraper:
                         // Debug: Show all classes on the link
                         const allClasses = Array.from(linkElement.classList).join(', ');
                         console.log(`🔗 Profile URL: ${candidate['profile-url']}`);
+                        console.log(`🆔 Profile ID: ${candidate['candidate_profile_id']}`);
                         console.log(`👁️ Link classes: ${allClasses}`);
                         console.log(`👁️ Profile Viewed: ${candidate['profile-viewed']}`);
                     } else {
                         candidate['profile-url'] = '';
+                        candidate['candidate_profile_id'] = '';
                         candidate['profile-viewed'] = 'Unknown';
                         console.log(`⚠️ No profile link found`);
                     }
@@ -1408,7 +1415,7 @@ class DiceCompleteScraper:
 
     def scrape_multiple_pages(self):
         """Scrape multiple pages of results"""
-        self.log(f"📄 Starting to scrape {self.max_pages} pages...")
+        self.log(f"📄 Starting to scrape up to {self.max_pages} pages...")
 
         for page_num in range(1, self.max_pages + 1):
             self.log(f"\n📄 Processing page {page_num}/{self.max_pages}")
@@ -1421,17 +1428,35 @@ class DiceCompleteScraper:
 
             # Extract data from current page
             candidates = self.extract_candidate_data()
-            self.all_candidates.extend(candidates)
+
+            # Filter out duplicates based on candidate_profile_id
+            new_candidates = 0
+            for candidate in candidates:
+                profile_id = candidate.get('candidate_profile_id', '')
+                if profile_id and profile_id not in self.seen_profile_ids:
+                    self.seen_profile_ids.add(profile_id)
+                    self.all_candidates.append(candidate)
+                    new_candidates += 1
+                elif not profile_id:
+                    # If no profile ID, use profile URL as fallback
+                    profile_url = candidate.get('profile-url', '')
+                    if profile_url and profile_url not in self.seen_profile_ids:
+                        self.seen_profile_ids.add(profile_url)
+                        self.all_candidates.append(candidate)
+                        new_candidates += 1
 
             if candidates:
                 self.log(f"✅ Found {len(candidates)} candidates on page {page_num}")
+                self.log(f"✅ Added {new_candidates} new unique candidates (filtered {len(candidates) - new_candidates} duplicates)")
 
-                # Show sample
-                for i, candidate in enumerate(candidates[:3], 1):
+                # Show sample of new candidates
+                new_added = [c for c in self.all_candidates[-new_candidates:]]
+                for i, candidate in enumerate(new_added[:3], 1):
                     name = candidate.get('profile-name-text', 'N/A')
                     location = candidate.get('location', 'N/A')
                     title = candidate.get('pref-prev-job-title', 'N/A')
-                    self.log(f"   {i}. {name} - {location} - {title}")
+                    profile_id = candidate.get('candidate_profile_id', 'N/A')
+                    self.log(f"   {i}. {name} (ID: {profile_id}) - {location} - {title}")
             else:
                 self.log("❌ No candidates found on this page")
 
@@ -1441,23 +1466,56 @@ class DiceCompleteScraper:
             # Navigate to next page if not the last page
             if page_num < self.max_pages:
                 try:
-                    next_button = self.page.query_selector('button[aria-label*="next"], a[aria-label*="next"], .pagination-next')
+                    # Get current page number before clicking
+                    current_page_indicator = self.page.query_selector('.pagination-page.active')
+                    old_page_num = current_page_indicator.text_content().strip() if current_page_indicator else str(page_num)
+
+                    # Look for next page button - must not be disabled
+                    next_button = self.page.query_selector('.pagination-next:not(.disabled) a.page-link')
+
+                    if not next_button:
+                        # Alternative selectors
+                        next_button = self.page.query_selector('li.pagination-next:not(.disabled) a')
+
                     if next_button:
-                        is_disabled = next_button.is_disabled()
-                        if not is_disabled:
-                            self.log("➡️ Navigating to next page...")
-                            next_button.click()
-                            self.page.wait_for_load_state('domcontentloaded', timeout=15000)
-                            time.sleep(2)
+                        self.log(f"🔍 Found next button, clicking to go to page {page_num + 1}...")
+
+                        # Click and wait for navigation
+                        next_button.click()
+
+                        # Wait for page number to change
+                        try:
+                            self.page.wait_for_function(
+                                f"document.querySelector('.pagination-page.active')?.textContent?.trim() !== '{old_page_num}'",
+                                timeout=10000
+                            )
+                        except:
+                            self.log("⚠️ Page number didn't change, waiting for network idle...")
+
+                        self.page.wait_for_load_state('networkidle', timeout=15000)
+                        time.sleep(2)
+
+                        # Verify page changed
+                        new_page_indicator = self.page.query_selector('.pagination-page.active')
+                        new_page_num = new_page_indicator.text_content().strip() if new_page_indicator else '?'
+
+                        if new_page_num != old_page_num:
+                            self.log(f"➡️ Successfully navigated to page {new_page_num}")
                         else:
-                            self.log("🏁 Next page button is disabled, ending scraping")
+                            self.log(f"⚠️ Page number didn't change (still on page {old_page_num}), stopping pagination")
+                            self.log("🏁 Reached the end of available pages")
                             break
                     else:
-                        self.log("🏁 No next page button found, ending scraping")
+                        self.log("🏁 No next page button found or button is disabled")
+                        self.log("🏁 Reached the end of available pages")
                         break
                 except Exception as e:
                     self.log(f"⚠️ Error navigating to next page: {e}")
+                    self.take_screenshot(self.page, f"pagination_error_page_{page_num}")
                     break
+
+        self.log(f"\n✅ Scraping completed! Total unique candidates: {len(self.all_candidates)}")
+        self.log(f"📊 Total unique profile IDs: {len(self.seen_profile_ids)}")
 
     def save_to_excel(self):
         """Save candidate data to Excel file - append to existing or create new"""
