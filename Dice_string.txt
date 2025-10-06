@@ -1,1 +1,7 @@
-("SDET" OR "Software Development Engineer in Test") AND (Java OR Python OR Unix OR AWS OR Selenium OR Cucumber OR "Automated Testing" OR "CI/CD" OR "Reliability Engineering" OR "Unix shell scripting" OR Angular OR Maven OR Jenkins OR Puppet OR Chef)
+("ServiceNow SAM" OR "SAM Analyst" OR "ServiceNow SAM Pro")
+AND ("ServiceNow SAM Pro" OR "SAM Pro")
+AND ("Publisher Packs" OR "ServiceNow Publisher Packs")
+AND (Microsoft OR Oracle OR IBM OR Adobe)
+AND ("Workspace One" OR "VMware Workspace One")
+AND (ILMT OR "IBM License Metric Tool")
+AND (ServiceNow OR "Service Now")

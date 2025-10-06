@@ -1,57 +1,21 @@
-Role : SDET Automation / FTE
+ServiceNow SAM SAM Analyst
 
-Location : Reston, VA
+Location- Reston, VA (In person Client interview) day one onsite
 
-Job type- Onsite
+ 
 
+Job Description
 
-
-
-
-Note : Please share the skill matrix for each submission using below format -
-
-
-
-Skills
-
-Years of Experience
-
-Rating ( Out of 5 )
-
-Java
-
-Selenium
-
-Cucumber
-
-AWS
-
-Python
-
-Unix
-
-
-
-Job Description -
-
-•             Candidate must have experience in SDET (Java, Selenium and Cucumber)
-
-•             Experience in Automated Testing and about 8-10 Years of overall Testing experience.
-
-•             Solid understanding of Java/J2EE or Python development to be able to design, implement and triage defects or issues
-
-•             Knowledge/ experience with AWS services such as Lambda, RDS, Redshift, EC2, EMR etc
-
-•             Ability to build automation testing frameworks from scratch (Selenium, Cucumber, etc...)
-
-•             Demonstrates an understanding of good software engineering practices including CI/CD, Automated testing and Reliability engineering (SRE)
-
-•             Very strong scripting skills with Unix shell scripting, python and UI development using Angular to enhance and maintain exiting test platforms
-
-Desired:
-
-•             Exposure to new DevOps tools such as Maven, Jenkins, Puppet, Chef, etc.
-
-•             Ability to drive innovation and adoption of leading test platforms/ solutions.
-
-•             Financial/Mortgage industry background.
+8+ years of experience in Software Asset Management, with ServiceNow SAM Pro knowledge.
+Lead end-to-end implementation and optimization of ServiceNow SAM Pro for enterprise environments
+Configure the software models, license metrics, and entitlement rules to ensure accurate compliance tracking
+Develop and maintain Publisher Packs for Tier 1 vendors (e.g., Microsoft, Oracle, IBM, Adobe) and Tier 2 publishers
+Integrate SAM Pro with discovery tools (Workspace One, ILMT) to normalize and reconcile software data
+Design and execute software audit defense strategies, including risk assessments and remediation plans
+Analyze software usage, entitlement, and deployment data to identify cost optimization and compliance gaps
+Collaborate with procurement, legal, and IT teams to align licensing strategies with business objectives
+Generate executive-level dashboards and reports to support audits, renewals, and vendor negotiations
+Proven expertise in software licensing models (per user, per device, concurrent, subscription, etc.)
+Deep licensing knowledge of Tier 1 and Tier 2 publisher contracts, audit triggers, and defense tactics
+Experience with license reconciliation, harvesting, and true-up forecasting
+Excellent communication and stakeholder management skills

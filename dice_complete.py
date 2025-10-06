@@ -1429,37 +1429,54 @@ class DiceCompleteScraper:
                 latest_file = existing_files[0]
                 self.log(f"📂 Found existing file: {latest_file}")
 
-                # Read existing data from Candidates sheet
-                existing_df = pd.read_excel(latest_file, sheet_name='Candidates', engine='openpyxl')
-                self.log(f"📊 Existing records: {len(existing_df)}")
+                # Try to read from hidden _ProfileData sheet first (new format)
+                # If it doesn't exist, read from Candidates sheet (old format)
+                try:
+                    profile_data_df = pd.read_excel(latest_file, sheet_name='_ProfileData', engine='openpyxl')
+                    self.log("📂 Reading profile data from hidden sheet")
+                    # Get existing profile IDs from hidden sheet
+                    existing_profile_ids = set(profile_data_df['candidate_profile_id'].dropna())
+                    existing_profile_ids.discard('')
 
-                # Check if profile-url column exists in existing data
-                if 'profile-url' not in existing_df.columns:
-                    self.log("⚠️  Existing file doesn't have 'profile-url' column")
-                    self.log("📝 Creating new file instead of appending...")
-                    df = new_df
-                    self.log(f"✅ {len(df)} new candidates to save")
+                    # Read candidate data from Candidates sheet (without profile-url)
+                    existing_df = pd.read_excel(latest_file, sheet_name='Candidates', engine='openpyxl')
+                    # Add profile URLs back from hidden sheet
+                    existing_df = existing_df.merge(profile_data_df, on='candidate_profile_id', how='left')
+                    self.log(f"📊 Existing records: {len(existing_df)}")
 
-                    # Delete the old file before creating new one
-                    try:
-                        os.remove(latest_file)
-                        self.log(f"🗑️  Deleted old file: {latest_file}")
-                    except Exception as e:
-                        self.log(f"⚠️  Could not delete old file: {e}")
-                else:
-                    # Ensure existing_df has candidate_profile_id column
-                    if 'candidate_profile_id' not in existing_df.columns:
-                        self.log("🔧 Adding candidate_profile_id to existing data...")
-                        existing_df['candidate_profile_id'] = existing_df['profile-url'].apply(extract_profile_id)
+                except:
+                    # Old format - profile-url might be in Candidates sheet
+                    self.log("📂 Reading from Candidates sheet (old format)")
+                    existing_df = pd.read_excel(latest_file, sheet_name='Candidates', engine='openpyxl')
+                    self.log(f"📊 Existing records: {len(existing_df)}")
+
+                    # Check if profile-url column exists
+                    if 'profile-url' not in existing_df.columns:
+                        self.log("⚠️  Old file format without profile-url column")
+                        self.log("📝 Creating new file instead of appending...")
+                        df = new_df
+                        self.log(f"✅ {len(df)} new candidates to save")
+
+                        try:
+                            os.remove(latest_file)
+                            self.log(f"🗑️  Deleted old file: {latest_file}")
+                        except Exception as e:
+                            self.log(f"⚠️  Could not delete old file: {e}")
                     else:
-                        # Re-extract profile IDs to ensure they don't have ?searchId
-                        self.log("🔧 Cleaning candidate_profile_id in existing data...")
-                        existing_df['candidate_profile_id'] = existing_df['profile-url'].apply(extract_profile_id)
+                        # Ensure existing_df has candidate_profile_id column
+                        if 'candidate_profile_id' not in existing_df.columns:
+                            self.log("🔧 Adding candidate_profile_id to existing data...")
+                            existing_df['candidate_profile_id'] = existing_df['profile-url'].apply(extract_profile_id)
+                        else:
+                            self.log("🔧 Cleaning candidate_profile_id in existing data...")
+                            existing_df['candidate_profile_id'] = existing_df['profile-url'].apply(extract_profile_id)
 
-                    # Get existing profile IDs for duplicate checking
-                    existing_profile_ids = set(existing_df['candidate_profile_id'].dropna())
-                    existing_profile_ids.discard('')  # Remove empty strings
+                        # Get existing profile IDs
+                        existing_profile_ids = set(existing_df['candidate_profile_id'].dropna())
+                        existing_profile_ids.discard('')
 
+                # Continue with duplicate checking if we have profile IDs
+                if 'existing_profile_ids' in locals() and len(existing_profile_ids) > 0:
                     self.log(f"🔍 Checking for duplicates against {len(existing_profile_ids)} existing profiles...")
 
                     # Filter out duplicates from new data
@@ -1541,24 +1558,24 @@ class DiceCompleteScraper:
 
             # Create Excel writer object
             with pd.ExcelWriter(timestamped_filename, engine='openpyxl') as writer:
-                # Sheet 1: Candidates Data (First sheet) - Include profile-url for duplicate checking
-                df[all_columns].to_excel(writer, sheet_name='Candidates', index=False)
+                # Sheet 1: Candidates Data (First sheet) - WITHOUT profile-url
+                df[export_columns].to_excel(writer, sheet_name='Candidates', index=False)
 
                 # Sheet 2: Search Parameters (Second sheet)
                 params_df = pd.DataFrame(list(search_params.items()), columns=['Parameter', 'Value'])
                 params_df.to_excel(writer, sheet_name='Search Parameters', index=False)
 
-                # Hide the profile-url column (column C - index 2)
+                # Sheet 3: Hidden sheet with profile-url for duplicate checking
+                df[['candidate_profile_id', 'profile-url']].to_excel(writer, sheet_name='_ProfileData', index=False)
+                # Hide the sheet
                 workbook = writer.book
-                worksheet = writer.sheets['Candidates']
-                # Find profile-url column index
-                profile_url_col_idx = all_columns.index('profile-url') + 1  # Excel is 1-indexed
-                worksheet.column_dimensions[chr(64 + profile_url_col_idx)].hidden = True
+                hidden_sheet = workbook['_ProfileData']
+                hidden_sheet.sheet_state = 'hidden'
 
                 self.log(f"✅ Data saved to {timestamped_filename}")
                 self.log(f"📊 Total records in file: {len(df)}")
-                self.log(f"📋 Sheets: 'Candidates', 'Search Parameters'")
-                self.log(f"🔒 profile-url column hidden (kept for duplicate checking)")
+                self.log(f"📋 Sheets: 'Candidates', 'Search Parameters', '_ProfileData' (hidden)")
+                self.log(f"🔒 profile-url stored in hidden sheet for duplicate checking")
 
             # Return the filename for opening later
             saved_filename = timestamped_filename
