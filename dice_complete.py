@@ -37,8 +37,17 @@ def should_regenerate_query():
     # If job_description.txt is newer, we should regenerate
     return job_desc_mtime > dice_string_mtime
 
-def load_boolean_query():
-    """Load Boolean query from Dice_string.txt or use default"""
+def load_boolean_query(manual_query=None):
+    """
+    Load Boolean query from manual input, Dice_string.txt, or use default
+    Priority: manual_query > Dice_string.txt > auto-generate > default
+    """
+    # If manual query provided via command line, use it
+    if manual_query:
+        print(f"✅ Using manually provided Boolean query")
+        print(f"📝 Query: {manual_query[:100]}{'...' if len(manual_query) > 100 else ''}")
+        return manual_query
+
     dice_string_file = "Dice_string.txt"
     job_desc_file = "job_description.txt"
 
@@ -89,8 +98,8 @@ def load_boolean_query():
     print("📋 Using default Boolean query (Appian Developer)")
     return '(Appian OR "Appian Developer" OR "Appian Engineer" OR "Appian Architect" OR "Appian BPM" OR "Appian Designer" OR "Appian Consultant") AND (SAIL OR "Appian UI" OR "Appian RPA" OR "Appian Integration" OR "Appian Automation") AND ("Business Process Management" OR BPM) AND (Java OR J2EE OR "JavaScript" OR C#) AND ("low-code" OR "low code" OR "low-code development") AND (workflow OR "process modeling" OR "workflow automation") AND (integration OR API OR "third-party systems") AND (SQL OR "data modeling" OR "data management") AND (AWS OR "Amazon Web Services" OR "Cloud Integration")'
 
-# Load the Boolean query at startup
-BOOLEAN = load_boolean_query()
+# Load the Boolean query at startup (will be overridden if --query is provided)
+BOOLEAN = None
 
 # These will be set by user input or defaults
 LOCATION = None
@@ -513,17 +522,123 @@ def get_search_parameters():
     print("🔍 SEARCH PARAMETERS")
     print("=" * 60)
 
-    # Get Location
+    # Get Boolean Query Option
+    print("\n🔎 BOOLEAN QUERY CONFIGURATION")
+    print("-" * 60)
+
+    # Check if Dice_string.txt exists
+    dice_string_exists = os.path.exists("Dice_string.txt")
+    if dice_string_exists:
+        try:
+            with open("Dice_string.txt", 'r', encoding='utf-8') as f:
+                existing_query = f.read().strip()
+                if existing_query:
+                    print(f"📄 Current Dice_string.txt query:")
+                    print(f"   {existing_query[:100]}{'...' if len(existing_query) > 100 else ''}")
+        except:
+            pass
+    else:
+        print("⚠️  Dice_string.txt not found")
+
+    print("\nOptions:")
+    print("  1. Use Dice_string.txt (default)")
+    print("  2. Enter manual Boolean query")
+    print("  3. Read from temp_query.txt file")
+    print("-" * 60)
+
+    manual_query = None
     while True:
-        location = input("\n📍 Enter location (min 3 characters, e.g., 'McLean, VA, USA'): ").strip()
+        choice = input("\nChoose option (1, 2, or 3, press Enter for default): ").strip()
+
+        if choice == "" or choice == "1":
+            # Use Dice_string.txt
+            print("✅ Will use Dice_string.txt")
+            break
+        elif choice == "2":
+            # Get manual query - handle multi-line paste with timeout
+            print("\n📝 Paste your Boolean query below and press Enter twice:")
+            print("   Example: (Java OR Python) AND (AWS OR Azure)")
+            print("-" * 60)
+
+            import sys
+            import select
+
+            query_lines = []
+            print("Paste query (press Enter on empty line when done):")
+
+            # Read lines until we get an empty line
+            while True:
+                line = input()
+                if not line.strip():  # Empty line signals end
+                    if query_lines:  # Only break if we have content
+                        break
+                    else:
+                        continue  # Skip leading empty lines
+                query_lines.append(line)
+
+            # Join all lines into single query (remove newlines, extra spaces)
+            manual_query = ' '.join(' '.join(query_lines).split())
+
+            if not manual_query:
+                print("❌ Error: Query cannot be empty!")
+                continue
+
+            print(f"\n✅ Manual query captured:")
+            print(f"   {manual_query[:150]}{'...' if len(manual_query) > 150 else ''}")
+            print(f"   Length: {len(manual_query)} characters")
+
+            # Confirm before proceeding
+            confirm = input("\nUse this query? (Y/n): ").strip().lower()
+            if confirm == 'n':
+                print("❌ Query cancelled, try again")
+                continue
+
+            break
+        elif choice == "3":
+            # Read from temp file
+            temp_file = "temp_query.txt"
+            if not os.path.exists(temp_file):
+                print(f"\n❌ Error: {temp_file} not found!")
+                print(f"💡 Create {temp_file} and paste your multi-line query there")
+                print("   Then select option 3 again")
+                continue
+
+            try:
+                with open(temp_file, 'r', encoding='utf-8') as f:
+                    file_query = f.read().strip()
+
+                # Join multiple lines into single query
+                manual_query = ' '.join(file_query.split())
+
+                if not manual_query:
+                    print(f"❌ Error: {temp_file} is empty!")
+                    continue
+
+                print(f"\n✅ Query loaded from {temp_file}:")
+                print(f"   {manual_query[:100]}{'...' if len(manual_query) > 100 else ''}")
+                break
+            except Exception as e:
+                print(f"❌ Error reading {temp_file}: {e}")
+                continue
+        else:
+            print("❌ Error: Please enter 1, 2, or 3!")
+            continue
+
+    # Get Location
+    print("\n📍 LOCATION")
+    print("-" * 60)
+    while True:
+        location = input("Enter location (min 3 characters, e.g., 'McLean, VA, USA'): ").strip()
         if len(location) < 3:
             print("❌ Error: Location must be at least 3 characters long!")
             continue
         break
 
     # Get Distance
+    print("\n📏 DISTANCE")
+    print("-" * 60)
     while True:
-        distance_input = input("📏 Enter distance in miles (e.g., '50'): ").strip()
+        distance_input = input("Enter distance in miles (e.g., '50'): ").strip()
         if not distance_input.isdigit():
             print("❌ Error: Distance must be a numeric value!")
             continue
@@ -534,8 +649,10 @@ def get_search_parameters():
         break
 
     # Get Last Active Days
+    print("\n📅 LAST ACTIVE")
+    print("-" * 60)
     while True:
-        days_input = input("📅 Enter last active days (e.g., '30'): ").strip()
+        days_input = input("Enter last active days (e.g., '30'): ").strip()
         if not days_input.isdigit():
             print("❌ Error: Days must be a numeric value!")
             continue
@@ -548,12 +665,16 @@ def get_search_parameters():
     print("\n" + "=" * 60)
     print("✅ SEARCH PARAMETERS CONFIRMED")
     print("=" * 60)
+    if manual_query:
+        print(f"🔎 Boolean Query: Manual ({manual_query[:50]}...)")
+    else:
+        print(f"🔎 Boolean Query: From Dice_string.txt")
     print(f"📍 Location: {location}")
     print(f"📏 Distance: {distance} miles")
     print(f"📅 Last Active: {days} days")
     print("=" * 60 + "\n")
 
-    return location, distance, days
+    return location, distance, days, manual_query
 
 class DiceCompleteScraper:
     def __init__(self, debug_mode=False, max_pages=1):
@@ -1849,8 +1970,11 @@ def main():
 
     args = parser.parse_args()
 
-    # Generate query if requested
+    # Load Boolean query - Priority: generate > Dice_string.txt
+    global BOOLEAN
+
     if args.generate_query or args.force_generate:
+        # Generate query if requested
         print("\n🤖 Generating Boolean query from job_description.txt...")
         print("=" * 50)
 
@@ -1869,8 +1993,6 @@ def main():
                 response = input("Generate new query? (y/N): ")
                 if response.lower() != 'y':
                     print("📋 Using existing Dice_string.txt")
-                    # Reload the query
-                    global BOOLEAN
                     BOOLEAN = load_boolean_query()
                 else:
                     query = generate_dice_query_with_chatgpt("job_description.txt", "Dice_string.txt")
@@ -1899,6 +2021,9 @@ def main():
             print(f"❌ Error generating query: {e}")
             print("💡 Check your OpenAI API key in .env file")
             return
+    else:
+        # Load from Dice_string.txt or auto-generate if needed
+        BOOLEAN = load_boolean_query()
 
     # Check if help was requested (argparse handles -h automatically)
     if len(sys.argv) == 1:
@@ -1907,25 +2032,36 @@ def main():
 
 This script handles the entire process:
 1. 🔐 Login with saved cookies
-2. 📝 Prompt for search parameters (location, distance, days)
-3. 🎯 Apply search filters (Appian + SAIL, custom location, etc.)
+2. 📝 Prompt for search parameters (Boolean query, location, distance, days)
+3. 🎯 Apply search filters with Boolean query
 4. 📊 Extract candidate data from search results
 5. 💾 Save to Excel file with timestamp
 
 Usage:
-  python dice_complete.py                    # Headless mode, 1 page
+  python dice_complete.py                    # Interactive mode (prompts for all inputs)
   python dice_complete.py --debug           # Visible browser for debugging
   python dice_complete.py --pages 5        # Scrape 5 pages
   python dice_complete.py --debug --pages 3  # Debug mode, 3 pages
 
+Boolean Query Input (During Runtime):
+  When the script runs, you'll be prompted to choose:
+  • Option 1: Use Dice_string.txt (default)
+  • Option 2: Enter manual Boolean query
+
+  If you choose Option 2, you can type your query directly:
+    Example: (Java OR Python) AND (AWS OR Azure)
+    Example: (SDET OR QA) AND Selenium AND Jenkins
+    Example: (ServiceNow OR SAM) AND ILMT
+
 Search Configuration:
-• Keywords: Loaded from Dice_string.txt (or default Appian query)
+• Boolean Query: Interactive input (use Dice_string.txt OR manual entry)
 • Location: User input required (min 3 characters)
 • Distance: User input required (numeric, in miles)
 • Last Active: User input required (numeric, in days)
 
 Output:
-• Excel file: dice_candidates_YYYYMMDD_HHMMSS.xlsx
+• Excel file: Dice_{JobRole}_{Timestamp}.xlsx
+• CSV file: Dice_{JobRole}_{Timestamp}.csv
 • Screenshots (debug mode): dice_*.png
 
 Data Fields Extracted:
@@ -1935,8 +2071,14 @@ Data Fields Extracted:
 • Profile URL, Scraped date, Page number
 
 Examples:
-  python dice_complete.py --debug --pages 3    # Debug mode, scrape 3 pages
-  python dice_complete.py --pages 5           # Headless mode, scrape 5 pages
+  # Interactive mode - will prompt for query choice
+  python dice_complete.py --pages 5
+
+  # Generate query from job_description.txt before running
+  python dice_complete.py --generate-query --pages 3
+
+  # Debug mode - will prompt for all inputs
+  python dice_complete.py --debug --pages 3
         """)
         return
 
@@ -1949,9 +2091,13 @@ Examples:
     print(f"⏰ Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 50)
 
-    # Get search parameters from user
+    # Get search parameters from user (including optional manual query)
     global LOCATION, DISTANCE_MILES, LAST_ACTIVE_DAYS
-    LOCATION, DISTANCE_MILES, LAST_ACTIVE_DAYS = get_search_parameters()
+    LOCATION, DISTANCE_MILES, LAST_ACTIVE_DAYS, user_manual_query = get_search_parameters()
+
+    # If user provided manual query during runtime, use it (overrides everything)
+    if user_manual_query:
+        BOOLEAN = load_boolean_query(manual_query=user_manual_query)
 
     # Create and run scraper
     scraper = DiceCompleteScraper(debug_mode=args.debug, max_pages=max_pages)
